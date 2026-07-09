@@ -1,0 +1,8 @@
+{
+  "name": "Online Assessment Live Monitor",
+  "description": "Secure candidate IDE and recruiter live-control center for test monitoring and fraud alerts.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

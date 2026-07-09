@@ -1,0 +1,227 @@
+@import "tailwindcss";
+
+/* ── Tailwind v4: Class-based dark mode (CRITICAL FIX) ─────────────────────── */
+/* Without this, dark: utilities use prefers-color-scheme, not .dark class      */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ── Base ──────────────────────────────────────────────────────────────────── */
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+  font-size: 18px; /* significantly larger base font scale */
+}
+
+body {
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-size: 1rem;
+}
+
+code, pre, .font-mono {
+  font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+}
+
+/* ── Custom Scrollbar ──────────────────────────────────────────────────────── */
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 99px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background: #334155;
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: #475569;
+}
+
+/* ── Animations ────────────────────────────────────────────────────────────── */
+@keyframes gradient-shift {
+  0%   { background-position: 0%   50%; }
+  50%  { background-position: 100% 50%; }
+  100% { background-position: 0%   50%; }
+}
+
+.animate-gradient {
+  background-size: 300% 300%;
+  animation: gradient-shift 8s ease infinite;
+}
+
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(18px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.animate-fade-up {
+  animation: fade-up 0.45s cubic-bezier(.22,.68,0,1.2) both;
+}
+
+@keyframes aurora {
+  0%   { transform: translate(0, 0)       scale(1);    opacity: 0.55; }
+  33%  { transform: translate(40px, -30px) scale(1.08); opacity: 0.75; }
+  66%  { transform: translate(-25px, 20px) scale(0.95); opacity: 0.45; }
+  100% { transform: translate(0, 0)       scale(1);    opacity: 0.55; }
+}
+
+.animate-aurora {
+  animation: aurora 14s ease-in-out infinite;
+}
+
+.animate-aurora-delayed {
+  animation: aurora 18s ease-in-out infinite reverse;
+}
+
+/* ── Physical Refractive Glass & Dense Oily Fluid Effects ────────────────── */
+.refractive-glass {
+  background: rgba(255, 255, 255, 0.45);
+  backdrop-filter: blur(28px) saturate(190%);
+  -webkit-backdrop-filter: blur(28px) saturate(190%);
+  border: 2.5px solid rgba(255, 255, 255, 0.65);
+  box-shadow: 
+    0 8px 32px 0 rgba(31, 38, 135, 0.08),
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.8),
+    inset 0 -1px 0 0 rgba(255, 255, 255, 0.2);
+}
+
+.dark .refractive-glass {
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(28px) saturate(190%);
+  -webkit-backdrop-filter: blur(28px) saturate(190%);
+  border: 2.5px solid rgba(255, 255, 255, 0.15);
+  box-shadow: 
+    0 8px 32px 0 rgba(0, 0, 0, 0.5),
+    inset 0 1px 0 0 rgba(255, 255, 255, 0.15),
+    inset 0 -1px 0 0 rgba(255, 255, 255, 0.05);
+}
+
+.oily-liquid-capsule {
+  position: relative;
+  background: rgba(255, 255, 255, 0.3);
+  border: 1.5px solid rgba(255, 255, 255, 0.5);
+  border-radius: 9999px;
+  overflow: hidden;
+  transition: all 0.5s cubic-bezier(0.25, 0.8, 0.25, 1);
+  box-shadow: 
+    inset 0 2px 5px rgba(255, 255, 255, 0.6),
+    inset 0 -2px 5px rgba(0, 0, 0, 0.03),
+    0 4px 12px rgba(0, 0, 0, 0.02);
+}
+
+.oily-liquid-capsule::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 50% 120%, rgba(99, 102, 241, 0.15), transparent 70%);
+  transition: opacity 0.5s ease;
+  opacity: 0;
+}
+
+.oily-liquid-capsule:hover::before {
+  opacity: 1;
+}
+
+.oily-liquid-capsule.active {
+  background: rgba(99, 102, 241, 0.09);
+  border-color: rgba(99, 102, 241, 0.45);
+  box-shadow: 
+    inset 0 2px 6px rgba(99, 102, 241, 0.2),
+    0 6px 16px rgba(99, 102, 241, 0.08);
+}
+
+.dark .oily-liquid-capsule {
+  background: rgba(0, 0, 0, 0.6);
+  border: 1.5px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 
+    inset 0 2px 5px rgba(255, 255, 255, 0.08),
+    inset 0 -2px 5px rgba(0, 0, 0, 0.4);
+}
+
+.dark .oily-liquid-capsule.active {
+  background: rgba(99, 102, 241, 0.2);
+  border-color: rgba(99, 102, 241, 0.55);
+}
+
+/* ── Floating animated oily blobs (Organic fluid physics simulation) ─────── */
+@keyframes oily-float-1 {
+  0% { transform: translate(0, 0) scale(1) rotate(0deg); }
+  33% { transform: translate(30px, -50px) scale(1.1) rotate(120deg); }
+  66% { transform: translate(-20px, 20px) scale(0.95) rotate(240deg); }
+  100% { transform: translate(0, 0) scale(1) rotate(360deg); }
+}
+
+@keyframes oily-float-2 {
+  0% { transform: translate(0, 0) scale(1) rotate(360deg); }
+  50% { transform: translate(-40px, 30px) scale(1.05) rotate(180deg); }
+  100% { transform: translate(0, 0) scale(1) rotate(0deg); }
+}
+
+.animate-oily-blob-1 {
+  animation: oily-float-1 25s ease-in-out infinite;
+}
+
+.animate-oily-blob-2 {
+  animation: oily-float-2 30s ease-in-out infinite;
+}
+
+/* ── Liquid Blob Icon Containers ─────────────────────────────────────────── */
+@keyframes blob-morph {
+  0%, 100% { border-radius: 60% 40% 30% 70% / 60% 30% 70% 40%; }
+  50%      { border-radius: 30% 60% 70% 40% / 50% 60% 30% 60%; }
+}
+
+.icon-blob {
+  animation: blob-morph 7s ease-in-out infinite;
+  transition: all 0.5s cubic-bezier(0.25, 0.8, 0.25, 1);
+  box-shadow: 
+    inset 0 2px 4px rgba(255, 255, 255, 0.2),
+    inset 0 -2px 4px rgba(0, 0, 0, 0.05),
+    0 4px 12px rgba(99, 102, 241, 0.05);
+}
+
+.icon-blob:hover {
+  transform: rotate(6deg) scale(1.05);
+  animation-duration: 3.5s;
+}
+
+.glass-shine::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg,
+    rgba(255,255,255,0.18) 0%,
+    rgba(255,255,255,0.04) 40%,
+    rgba(255,255,255,0.00) 60%);
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+/* ── Utility ────────────────────────────────────────────────────────────────── */
+.custom-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent;
+}
+
+.dark .custom-scrollbar {
+  scrollbar-color: #334155 transparent;
+}
+
+/* Prose reset for question panel */
+.prose h2 { margin-top: 0; }
+.prose p  { margin-bottom: 0.75rem; }
