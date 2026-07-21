@@ -18,6 +18,11 @@ export default function Login() {
 
   useEffect(() => {
     document.documentElement.classList.remove('dark');
+    // Clear credentials on mount / logout return
+    setName('');
+    setEmail('');
+    setPassword('');
+    setAccessCode('');
   }, []);
 
   const handleLogin = async (e) => {
@@ -218,6 +223,7 @@ export default function Login() {
                     required
                     value={email}
                     onChange={e => setEmail(e.target.value)}
+                    autoComplete="off"
                     className="w-full py-3.5 px-4 rounded-2xl text-[14px] text-slate-800 placeholder:text-slate-400 focus:outline-none transition-all duration-300 bg-white/40 border border-slate-200 focus:border-indigo-400 focus:ring-4 focus:ring-indigo-500/5 shadow-inner"
                     placeholder="email@example.com"
                     autoFocus={!isSignUp}
@@ -232,6 +238,7 @@ export default function Login() {
                     required
                     value={password}
                     onChange={e => setPassword(e.target.value)}
+                    autoComplete="new-password"
                     className="w-full py-3.5 px-4 rounded-2xl text-[14px] text-slate-800 placeholder:text-slate-400 focus:outline-none transition-all duration-300 bg-white/40 border border-slate-200 focus:border-indigo-400 focus:ring-4 focus:ring-indigo-500/5 shadow-inner"
                     placeholder="••••••••"
                   />

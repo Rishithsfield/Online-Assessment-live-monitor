@@ -1,30 +1,24 @@
 import mongoose from 'mongoose';
 
-const testCaseSchema = new mongoose.Schema({
+const templateTestCaseSchema = new mongoose.Schema({
   id: { type: Number, required: true },
   input: { type: String, required: true },
   expectedOutput: { type: String, required: true }
 }, { _id: false });
 
-const questionSchema = new mongoose.Schema({
-  id: { type: Number, required: true },
+const questionTemplateSchema = new mongoose.Schema({
   title: { type: String, required: true },
-  functionName: { type: String },
+  functionName: { type: String, default: 'solution' },
   text: { type: String, required: true },
-  constraints: { type: String },
+  constraints: { type: String, default: '' },
   difficulty: { type: String, enum: ['easy', 'medium', 'hard'], default: 'medium' },
   tags: { type: [String], default: [] },
   boilerplate: {
     javascript: { type: String, default: '' },
     python: { type: String, default: '' }
   },
-  testcases: [testCaseSchema]
-}, { _id: false });
-
-const examSchema = new mongoose.Schema({
-  duration: { type: Number, default: 3600 },
-  status: { type: String, enum: ['draft', 'active', 'finished'], default: 'draft' },
-  questions: [questionSchema]
+  testcases: [templateTestCaseSchema],
+  createdAt: { type: Date, default: Date.now }
 });
 
-export default mongoose.model('Exam', examSchema);
+export default mongoose.model('QuestionTemplate', questionTemplateSchema);

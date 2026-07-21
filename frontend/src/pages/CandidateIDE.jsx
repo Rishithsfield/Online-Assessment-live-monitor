@@ -7,7 +7,7 @@ import { CodeEditor } from '../components/CodeEditor';
 import {
   AlertTriangle, Clock, TerminalSquare, LogOut, CheckCircle,
   ChevronLeft, ChevronRight, Play, Upload, XCircle, Loader2,
-  Moon, Sun
+  Moon, Sun, MessageSquare, Send, X
 } from 'lucide-react';
 import { cn } from '../lib/utils';
 import toast from 'react-hot-toast';
@@ -52,11 +52,24 @@ function LoadingSkeleton() {
   );
 }
 
-const getDefaultCode = (lang) => {
-  if (lang === 'python') {
-    return '# Write your solution here\n';
+const toSnakeCase = (str) => {
+  if (!str) return 'solution';
+  return str
+    .replace(/([A-Z])/g, '_$1')
+    .toLowerCase()
+    .replace(/^_/, '');
+};
+
+const getDefaultCode = (lang, question) => {
+  if (question?.boilerplate?.[lang] && question.boilerplate[lang].trim()) {
+    return question.boilerplate[lang];
   }
-  return '// Write your solution here\n';
+  const fnName = question?.functionName || 'solution';
+  if (lang === 'python') {
+    const pyFn = toSnakeCase(fnName);
+    return `def ${pyFn}():\n    # Write your solution here\n    pass\n`;
+  }
+  return `function ${fnName}() {\n  // Write your solution here\n}\n`;
 };
 
 export default function CandidateIDE() {
@@ -89,6 +102,19 @@ export default function CandidateIDE() {
 
   const [terminalOutput, setTerminalOutput] = useState(null);
   const [isRunning, setIsRunning]           = useState(false);
+
+  // ── Chat State ─────────────────────────────────────────────────────────────
+  const [chatOpen, setChatOpen]               = useState(false);
+  const [chatMessages, setChatMessages]       = useState([]);
+  const [chatInput, setChatInput]             = useState('');
+  const [unreadChatCount, setUnreadChatCount] = useState(0);
+  const chatScrollRef                         = useRef(null);
+  const chatOpenRef                           = useRef(chatOpen);
+
+  useEffect(() => {
+    chatOpenRef.current = chatOpen;
+    if (chatOpen) setUnreadChatCount(0);
+  }, [chatOpen]);
 
   // ── Persist state to localStorage ─────────────────────────────────────────
   useEffect(() => {
@@ -136,8 +162,10 @@ export default function CandidateIDE() {
         const savedIndex   = parsed.currentQuestionIndex || 0;
 
         if (data.questions?.length > 0) {
-          const qId = data.questions[savedIndex]?.id ?? data.questions[0].id;
-          setCode(savedAnswers[qId] || getDefaultCode(parsed.language || 'javascript'));
+          const qObj = data.questions[savedIndex] || data.questions[0];
+          const qId = qObj.id;
+          const initialLang = parsed.language || 'javascript';
+          setCode(savedAnswers[qId] || getDefaultCode(initialLang, qObj));
         }
       } catch {}
     });
@@ -156,13 +184,46 @@ export default function CandidateIDE() {
 
     socket.on('exam_updated', (data) => {
       setExamData(data);
-      setTimeLeft(data.duration || 3600);
+      setTimeLeft(data?.duration || 3600);
+      if (data?.questions?.length > 0) {
+        const currentQ = data.questions[currentQuestionIndex] || data.questions[0];
+        setCode(prev => {
+          if (!prev || prev.includes('Write your solution here')) {
+            return getDefaultCode(language, currentQ);
+          }
+          return prev;
+        });
+      }
     });
 
     socket.on('exam_started', (data) => {
       setExamData(data);
-      setTimeLeft(data.duration || 3600);
+      setTimeLeft(data?.duration || 3600);
       toast.success('The exam has started!', { icon: '🚀' });
+      if (data?.questions?.length > 0) {
+        const currentQ = data.questions[currentQuestionIndex] || data.questions[0];
+        setCode(prev => {
+          if (!prev || prev.includes('Write your solution here')) {
+            return getDefaultCode(language, currentQ);
+          }
+          return prev;
+        });
+      }
+    });
+
+    // Fetch initial chat history
+    socket.emit('get_chat_history', { sessionId: auth.sessionId }, (messages) => {
+      if (Array.isArray(messages)) setChatMessages(messages);
+    });
+
+    socket.on('new_chat_message', (msg) => {
+      if (msg.sessionId === auth.sessionId) {
+        setChatMessages(prev => [...prev, msg]);
+        if (!chatOpenRef.current && msg.sender === 'recruiter') {
+          setUnreadChatCount(prev => prev + 1);
+          toast('💬 New message from Proctor', { icon: '💬' });
+        }
+      }
     });
 
     socket.on('force_logout', ({ reason }) => {
@@ -192,6 +253,7 @@ export default function CandidateIDE() {
       socket.off('exam_updated');
       socket.off('exam_started');
       socket.off('force_logout');
+      socket.off('new_chat_message');
     };
   }, [auth, socket, navigate]);
 
@@ -202,21 +264,39 @@ export default function CandidateIDE() {
     }
   }, [timeLeft]);
 
-  const { reportEvent } = useBehaviorTracker(auth?.sessionId || '');
+  const { reportEvent } = useBehaviorTracker(auth?.sessionId || '', examData?.status === 'active');
 
   // ── Handlers ───────────────────────────────────────────────────────────────
+  const handleSendChatMessage = (e) => {
+    e.preventDefault();
+    if (!chatInput.trim() || !socket || !auth?.sessionId) return;
+    socket.emit('send_chat_message', {
+      sessionId: auth.sessionId,
+      text: chatInput.trim(),
+      sender: 'candidate',
+      senderName: auth.name || 'Candidate'
+    });
+    setChatInput('');
+  };
+
+  useEffect(() => {
+    if (chatScrollRef.current) {
+      chatScrollRef.current.scrollTop = chatScrollRef.current.scrollHeight;
+    }
+  }, [chatMessages, chatOpen]);
+
   const handleLanguageChange = (e) => {
     const newLang = e.target.value;
     setLanguage(newLang);
 
-    // Auto-update placeholder code if it hasn't been modified
-    const currentPlaceholderJs = getDefaultCode('javascript');
-    const currentPlaceholderPy = getDefaultCode('python');
-    if (code === currentPlaceholderJs || code === currentPlaceholderPy || !code.trim() || code === '// Write your solution here\n' || code === '# Write your solution here\n') {
-      const nextDefault = getDefaultCode(newLang);
+    const currentQ = examData?.questions[currentQuestionIndex];
+    const currentPlaceholderJs = getDefaultCode('javascript', currentQ);
+    const currentPlaceholderPy = getDefaultCode('python', currentQ);
+    if (code === currentPlaceholderJs || code === currentPlaceholderPy || !code.trim() || code.includes('Write your solution here')) {
+      const nextDefault = getDefaultCode(newLang, currentQ);
       setCode(nextDefault);
-      if (examData?.questions[currentQuestionIndex]) {
-        setAnswers(prev => ({ ...prev, [examData.questions[currentQuestionIndex].id]: nextDefault }));
+      if (currentQ) {
+        setAnswers(prev => ({ ...prev, [currentQ.id]: nextDefault }));
       }
       if (socket && auth?.sessionId) {
         socket.emit('code_update', { sessionId: auth.sessionId, code: nextDefault });
@@ -238,9 +318,10 @@ export default function CandidateIDE() {
   };
 
   const switchQuestion = (index) => {
-    if (!examData) return;
-    const nextQId = examData.questions[index].id;
-    setCode(answers[nextQId] || getDefaultCode(language));
+    if (!examData || !examData.questions[index]) return;
+    const targetQ = examData.questions[index];
+    const nextQId = targetQ.id;
+    setCode(answers[nextQId] || getDefaultCode(language, targetQ));
     setCurrentQuestionIndex(index);
     setTerminalOutput(null);
   };
@@ -824,6 +905,95 @@ export default function CandidateIDE() {
           </div>
         </div>
       )}
+
+      {/* Floating Proctor Chat Drawer (Bottom Left to avoid overlapping IDE action buttons) */}
+      <div className="fixed bottom-6 left-6 z-50 flex flex-col items-start">
+        {chatOpen ? (
+          <div className="w-80 sm:w-96 h-96 refractive-glass rounded-2xl shadow-2xl flex flex-col overflow-hidden border border-slate-200 dark:border-zinc-800 bg-white/95 dark:bg-black/95 backdrop-blur-xl animate-fade-up">
+            {/* Drawer Header */}
+            <div className="px-4 py-3 bg-slate-900 text-white border-b border-slate-800 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <div className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+                <span className="text-xs font-bold flex items-center gap-1.5 text-white">
+                  <MessageSquare className="w-4 h-4 text-indigo-400" /> Live Proctor Chat
+                </span>
+              </div>
+              <button
+                onClick={() => setChatOpen(false)}
+                className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition-colors cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Messages body */}
+            <div ref={chatScrollRef} className="flex-1 p-4 overflow-y-auto space-y-3 custom-scrollbar bg-slate-50/50 dark:bg-zinc-950/50">
+              {chatMessages.length === 0 ? (
+                <div className="h-full flex flex-col items-center justify-center text-center p-4 text-slate-400 text-xs">
+                  <MessageSquare className="w-8 h-8 mb-2 text-slate-300 dark:text-zinc-700" />
+                  <p className="font-bold text-slate-600 dark:text-slate-300">Proctor Support Channel</p>
+                  <p className="text-[10px] text-slate-400 mt-1">Need help or clarification? Send a message directly to your proctor.</p>
+                </div>
+              ) : (
+                chatMessages.map((msg, i) => {
+                  const isMe = msg.sender === 'candidate';
+                  return (
+                    <div key={msg._id || i} className={cn('flex flex-col max-w-[85%]', isMe ? 'ml-auto items-end' : 'mr-auto items-start')}>
+                      <span className="text-[9px] text-slate-400 mb-0.5 px-1 font-bold">
+                        {isMe ? 'You' : (msg.senderName || 'Proctor')} · {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </span>
+                      <div className={cn(
+                        'px-3 py-2 rounded-2xl text-xs leading-relaxed shadow-sm font-medium',
+                        isMe
+                          ? 'bg-indigo-600 text-white rounded-br-none'
+                          : 'bg-white dark:bg-zinc-800 text-slate-800 dark:text-slate-100 rounded-bl-none border border-slate-200 dark:border-zinc-700'
+                      )}>
+                        {msg.text}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            {/* Input Form */}
+            <form onSubmit={handleSendChatMessage} className="p-3 bg-white dark:bg-zinc-900 border-t border-slate-200 dark:border-zinc-800 flex items-center gap-2">
+              <input
+                type="text"
+                value={chatInput}
+                onChange={e => setChatInput(e.target.value)}
+                placeholder="Type a message to proctor..."
+                className="flex-1 px-3 py-2 bg-slate-50 dark:bg-black border border-slate-200 dark:border-zinc-800 rounded-xl text-xs focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-800 dark:text-slate-100 placeholder:text-slate-400"
+              />
+              <button
+                type="submit"
+                disabled={!chatInput.trim()}
+                className="p-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white transition-colors disabled:opacity-40 cursor-pointer shadow-sm"
+              >
+                <Send className="w-3.5 h-3.5" />
+              </button>
+            </form>
+          </div>
+        ) : (
+          <button
+            onClick={() => setChatOpen(true)}
+            className="relative oily-liquid-capsule px-4 py-3 bg-white hover:bg-slate-100 text-black shadow-2xl shadow-black/20 border-2 border-slate-300 dark:border-zinc-700 flex items-center gap-2.5 text-xs font-black transition-all duration-300 hover:scale-105 cursor-pointer z-50 opacity-100"
+          >
+            <div className="relative">
+              <MessageSquare className="w-4.5 h-4.5 text-black stroke-[2.5]" />
+              {unreadChatCount > 0 && (
+                <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-red-500 animate-ping" />
+              )}
+            </div>
+            <span className="text-black font-black tracking-wide">Proctor Chat</span>
+            {unreadChatCount > 0 && (
+              <span className="ml-1 px-1.5 py-0.5 rounded-full bg-red-600 text-white text-[10px] font-black border border-black">
+                {unreadChatCount}
+              </span>
+            )}
+          </button>
+        )}
+      </div>
     </div>
   );
 }

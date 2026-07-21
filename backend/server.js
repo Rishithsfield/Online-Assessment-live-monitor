@@ -14,8 +14,11 @@ import Session from './models/Session.js';
 import Telemetry from './models/Telemetry.js';
 import Recruiter from './models/Recruiter.js';
 import Invite from './models/Invite.js';
+import QuestionTemplate from './models/QuestionTemplate.js';
+import Message from './models/Message.js';
 import { authMiddleware, requireRole } from './middleware/auth.js';
 import { executeCode } from './services/judge0.js';
+import { checkAllSessionsPlagiarism } from './services/plagiarism.js';
 
 // ── MongoDB Connection ────────────────────────────────────────────────────────
 mongoose.connect(process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/examdb', {
@@ -110,7 +113,7 @@ async function startServer() {
       if (!email || !password) {
         return res.status(400).json({ error: 'Email and password are required' });
       }
-      
+
       const existing = await Recruiter.findOne({ email: email.toLowerCase() });
       if (existing) {
         return res.status(400).json({ error: 'Recruiter account already exists with this email' });
@@ -177,7 +180,7 @@ async function startServer() {
         if (!accessCode) {
           return res.status(400).json({ error: 'Access code is required for candidates' });
         }
-        
+
         const invite = await Invite.findOne({ code: accessCode.trim().toUpperCase() });
         if (!invite) {
           return res.status(401).json({ error: 'Invalid access code' });
@@ -271,6 +274,263 @@ async function startServer() {
       res.json({ output });
     } catch (e) {
       res.status(500).json({ error: 'Execution failed' });
+    }
+  });
+
+  // Plagiarism report across all candidates
+  app.get('/api/plagiarism/report', authMiddleware, requireRole('recruiter'), async (req, res) => {
+    try {
+      const sessions = await Session.find();
+      const report = checkAllSessionsPlagiarism(sessions.map(s => s.toObject()));
+      res.json(report);
+    } catch (err) {
+      res.status(500).json({ error: 'Failed to generate plagiarism report: ' + err.message });
+    }
+  });
+
+  // ── Question Template Library ───────────────────────────────────────────────
+
+  // List templates (optional ?difficulty= and ?tag= query filters)
+  app.get('/api/templates', authMiddleware, requireRole('recruiter'), async (req, res) => {
+    try {
+      const filter = {};
+      if (req.query.difficulty) filter.difficulty = req.query.difficulty;
+      if (req.query.tag) filter.tags = { $in: [req.query.tag] };
+      const templates = await QuestionTemplate.find(filter).sort({ createdAt: -1 });
+      res.json(templates);
+    } catch (err) {
+      res.status(500).json({ error: 'Failed to fetch templates: ' + err.message });
+    }
+  });
+
+  // Create a template manually
+  app.post('/api/templates', authMiddleware, requireRole('recruiter'), async (req, res) => {
+    try {
+      const template = await QuestionTemplate.create(req.body);
+      res.status(201).json(template);
+    } catch (err) {
+      res.status(500).json({ error: 'Failed to create template: ' + err.message });
+    }
+  });
+
+  // Delete a template
+  app.delete('/api/templates/:id', authMiddleware, requireRole('recruiter'), async (req, res) => {
+    try {
+      await QuestionTemplate.findByIdAndDelete(req.params.id);
+      res.json({ success: true });
+    } catch (err) {
+      res.status(500).json({ error: 'Failed to delete template: ' + err.message });
+    }
+  });
+
+  // ── AI Question Generation via Gemini ───────────────────────────────────────
+  app.post('/api/ai/generate-question', authMiddleware, requireRole('recruiter'), async (req, res) => {
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      return res.status(503).json({
+        error: 'Gemini API key not configured. Add GEMINI_API_KEY to your .env file. Get one at https://aistudio.google.com/apikey'
+      });
+    }
+
+    const { topic, difficulty, testCaseCount } = req.body;
+    if (!topic) {
+      return res.status(400).json({ error: 'Topic is required' });
+    }
+
+    const numTestCases = Math.min(Math.max(testCaseCount || 3, 1), 10);
+    const diffLevel = ['easy', 'medium', 'hard'].includes(difficulty) ? difficulty : 'medium';
+
+    const prompt = `Topic: ${topic}
+Difficulty: ${diffLevel}
+Number of test cases: ${numTestCases}
+
+Generate a coding challenge as a JSON object matching this structure:
+{
+  "title": "Short descriptive title",
+  "functionName": "camelCaseFunctionName",
+  "text": "Full problem statement with examples. Use standard plain text for math (e.g. 10^9 + 7, a != b). Do NOT use LaTeX commands with backslashes like \\neq or \\frac.",
+  "constraints": "Bullet-pointed constraints using standard text",
+  "difficulty": "${diffLevel}",
+  "tags": ["tag1", "tag2"],
+  "boilerplate": {
+    "javascript": "function camelCaseFunctionName(params) {\n  // Write your code here\n}",
+    "python": "def snake_case_function_name(params):\n    # Write your code here\n    pass"
+  },
+  "testcases": [
+    { "id": 1, "input": "arg1, arg2", "expectedOutput": "expected_result" }
+  ]
+}`;
+
+    try {
+      const headers = {
+        'Content-Type': 'application/json',
+        'x-goog-api-key': apiKey
+      };
+
+      const jsonSchema = {
+        type: 'OBJECT',
+        properties: {
+          title: { type: 'STRING' },
+          functionName: { type: 'STRING' },
+          text: { type: 'STRING' },
+          constraints: { type: 'STRING' },
+          difficulty: { type: 'STRING' },
+          tags: { type: 'ARRAY', items: { type: 'STRING' } },
+          boilerplate: {
+            type: 'OBJECT',
+            properties: {
+              javascript: { type: 'STRING' },
+              python: { type: 'STRING' }
+            },
+            required: ['javascript', 'python']
+          },
+          testcases: {
+            type: 'ARRAY',
+            items: {
+              type: 'OBJECT',
+              properties: {
+                id: { type: 'INTEGER' },
+                input: { type: 'STRING' },
+                expectedOutput: { type: 'STRING' }
+              },
+              required: ['id', 'input', 'expectedOutput']
+            }
+          }
+        },
+        required: ['title', 'functionName', 'text', 'constraints', 'difficulty', 'tags', 'boilerplate', 'testcases']
+      };
+
+      const reqBody = JSON.stringify({
+        systemInstruction: {
+          parts: [{
+            text: "You are an automated API backend that outputs ONLY raw JSON adhering strictly to the provided response schema. Never output reasoning, test walkthroughs, markdown code fences, or LaTeX commands containing backslashes."
+          }]
+        },
+        contents: [{ parts: [{ text: prompt }] }],
+        generationConfig: {
+          temperature: 0.1,
+          maxOutputTokens: 8192,
+          responseMimeType: 'application/json',
+          responseSchema: jsonSchema
+        }
+      });
+
+      let geminiRes = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent`,
+        { method: 'POST', headers, body: reqBody }
+      );
+
+      // Fallback to gemini-flash-latest if 1.5-flash is unavailable
+      if (!geminiRes.ok) {
+        geminiRes = await fetch(
+          `https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent`,
+          { method: 'POST', headers, body: reqBody }
+        );
+      }
+
+      if (!geminiRes.ok) {
+        const errBody = await geminiRes.text();
+        console.error('Gemini API error:', geminiRes.status, errBody);
+        let parsedErr = errBody;
+        try {
+          const jsonErr = JSON.parse(errBody);
+          parsedErr = jsonErr.error?.message || errBody;
+        } catch (_) { }
+        return res.status(502).json({ error: `Gemini API returned ${geminiRes.status}: ${parsedErr}` });
+      }
+
+      const geminiData = await geminiRes.json();
+      const rawText = geminiData?.candidates?.[0]?.content?.parts?.[0]?.text;
+
+      if (!rawText) {
+        return res.status(502).json({ error: 'Empty response from Gemini API. Try again.' });
+      }
+
+      // Multi-pass Auto-Repairing JSON Parser
+      let question;
+      try {
+        let cleaned = rawText.replace(/^```(?:json)?\s*/gi, '').replace(/\s*```$/gi, '').trim();
+        const firstBrace = cleaned.indexOf('{');
+        const lastBrace = cleaned.lastIndexOf('}');
+        if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+          cleaned = cleaned.substring(firstBrace, lastBrace + 1);
+        } else if (firstBrace !== -1) {
+          cleaned = cleaned.substring(firstBrace);
+        }
+
+        // Pass 1: Direct JSON.parse
+        try {
+          question = JSON.parse(cleaned);
+        } catch (e1) {
+          // Pass 2: Truncated JSON Auto-repair + Invalid backslash & character escaping
+          let inString = false;
+          let escaped = false;
+          let stack = [];
+          let repaired = '';
+
+          for (let i = 0; i < cleaned.length; i++) {
+            const ch = cleaned[i];
+            if (escaped) {
+              repaired += ch;
+              escaped = false;
+              continue;
+            }
+            if (ch === '\\') {
+              // Fix invalid JSON escape characters (e.g. LaTeX \neq, \frac)
+              const nextChar = cleaned[i + 1];
+              if (nextChar && !' "  / b f n r t u '.includes(nextChar)) {
+                repaired += '\\\\';
+              } else {
+                repaired += ch;
+                escaped = true;
+              }
+              continue;
+            }
+            if (ch === '"') {
+              inString = !inString;
+              repaired += ch;
+              continue;
+            }
+            if (inString) {
+              if (ch === '\n') { repaired += '\\n'; continue; }
+              if (ch === '\r') { repaired += '\\r'; continue; }
+              if (ch === '\t') { repaired += '\\t'; continue; }
+              repaired += ch;
+              continue;
+            }
+
+            if (ch === '{') stack.push('}');
+            else if (ch === '[') stack.push(']');
+            else if (ch === '}' || ch === ']') {
+              if (stack.length > 0 && stack[stack.length - 1] === ch) {
+                stack.pop();
+              }
+            }
+            repaired += ch;
+          }
+
+          if (inString) repaired += '"';
+          while (stack.length > 0) repaired += stack.pop();
+
+          question = JSON.parse(repaired);
+        }
+      } catch (err) {
+        console.error('Failed JSON raw output:', rawText);
+        return res.status(502).json({ error: 'AI response was truncated or unparseable. Please click Generate Question again.' });
+      }
+
+      // Validate essential fields
+      if (!question.title || !question.text || !question.testcases) {
+        return res.status(502).json({ error: 'Gemini returned an incomplete question. Try again.' });
+      }
+
+      // Ensure IDs on test cases
+      question.testcases = question.testcases.map((tc, i) => ({ ...tc, id: tc.id || i + 1 }));
+
+      res.json(question);
+    } catch (err) {
+      console.error('AI generation error:', err);
+      res.status(500).json({ error: 'Failed to generate question: ' + err.message });
     }
   });
 
@@ -457,11 +717,48 @@ async function startServer() {
       }
     });
 
+    // ── Real-Time Proctor Chat ──────────────────────────────────────────────
+    socket.on('get_chat_history', async ({ sessionId }, callback) => {
+      try {
+        const messages = await Message.find({ sessionId }).sort({ timestamp: 1 });
+        if (typeof callback === 'function') {
+          callback(messages);
+        } else {
+          socket.emit('chat_history', { sessionId, messages });
+        }
+      } catch (err) {
+        console.error('Failed to fetch chat history:', err);
+      }
+    });
+
+    socket.on('send_chat_message', async ({ sessionId, text, sender, senderName }) => {
+      if (!sessionId || !text || !text.trim()) return;
+      try {
+        const msg = await Message.create({
+          sessionId,
+          sender: sender || 'candidate',
+          senderName: senderName || 'User',
+          text: text.trim(),
+          timestamp: new Date()
+        });
+
+        const msgObj = msg.toObject();
+        // Emit to the specific candidate session room
+        io.to(sessionId).emit('new_chat_message', msgObj);
+        // Emit to recruiter proctor monitors
+        io.to('recruiter_monitor').emit('new_chat_message', msgObj);
+      } catch (err) {
+        console.error('Failed to send chat message:', err);
+      }
+    });
+
     socket.on('telemetry_event', async (data) => {
       const { sessionId, eventType, timestamp } = data;
       const session = await Session.findOne({ id: sessionId });
+      const exam = await Exam.findOne();
 
-      if (session && session.status === 'active') {
+      // Only record telemetry violations if BOTH the candidate session and the exam are active (started by recruiter)
+      if (session && session.status === 'active' && exam && exam.status === 'active') {
         // Enforce safe DB telemetry cap per session (max 150 items)
         let currentCount = telemetryCounts.get(sessionId);
         if (currentCount === undefined) {
@@ -577,6 +874,7 @@ async function startServer() {
       let exam = await Exam.findOne();
       if (exam) {
         exam.status = 'draft';
+        exam.questions = [];
         await exam.save();
         io.emit('exam_updated', exam.toObject());
 

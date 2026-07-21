@@ -1,10 +1,11 @@
 import { useEffect, useCallback } from 'react';
 import { useSocket } from '../context/SocketContext';
 
-export function useBehaviorTracker(sessionId) {
+export function useBehaviorTracker(sessionId, enabled = true) {
   const { socket } = useSocket();
 
   const reportEvent = useCallback((eventType) => {
+    if (!enabled) return;
     if (socket && sessionId) {
       socket.emit('telemetry_event', {
         sessionId,
@@ -12,7 +13,7 @@ export function useBehaviorTracker(sessionId) {
         timestamp: Date.now()
       });
     }
-  }, [socket, sessionId]);
+  }, [socket, sessionId, enabled]);
 
   useEffect(() => {
     const handleBlur = () => {
