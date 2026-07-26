@@ -2,7 +2,7 @@
 
 /* ── Tailwind v4: Class-based dark mode (CRITICAL FIX) ─────────────────────── */
 /* Without this, dark: utilities use prefers-color-scheme, not .dark class      */
-@custom-variant dark (&:where(.dark, .dark *));
+@variant dark (&:where(.dark, .dark *));
 
 /* ── Base ──────────────────────────────────────────────────────────────────── */
 *, *::before, *::after {
