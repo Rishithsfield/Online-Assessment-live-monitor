@@ -17,11 +17,11 @@ import Invite from './models/Invite.js';
 import QuestionTemplate from './models/QuestionTemplate.js';
 import Message from './models/Message.js';
 import { authMiddleware, requireRole } from './middleware/auth.js';
-import { executeCode } from './services/judge0.js';
+import { executeCode } from './services/codeRunner.js';
 import { checkAllSessionsPlagiarism } from './services/plagiarism.js';
 
 // ── MongoDB Connection ────────────────────────────────────────────────────────
-mongoose.connect(process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/examdb', {
+mongoose.connect(process.env.MONGODB_URI, {
   serverSelectionTimeoutMS: 10000,
 }).then(async () => {
   console.log('✅ MongoDB connected');
@@ -41,20 +41,7 @@ mongoose.connect(process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/examdb', 
     await Exam.create({
       duration: 3600,
       status: 'draft',
-      questions: [
-        {
-          id: 1,
-          title: 'Two Sum',
-          functionName: 'twoSum',
-          text: 'Given an array of integers `nums` and an integer `target`, return the indices of the two numbers such that they add up to `target`.\n\nYou may assume that each input would have exactly one solution, and you may not use the same element twice.',
-          constraints: '- 2 <= nums.length <= 10^4\n- -10^9 <= nums[i] <= 10^9\n- -10^9 <= target <= 10^9\n- Only one valid answer exists.',
-          testcases: [
-            { id: 1, input: '[2,7,11,15], 9', expectedOutput: '[0,1]' },
-            { id: 2, input: '[3,2,4], 6', expectedOutput: '[1,2]' },
-            { id: 3, input: '[3,3], 6', expectedOutput: '[0,1]' },
-          ]
-        }
-      ]
+      questions: []
     });
     console.log('  → Default exam seeded');
   }
@@ -266,7 +253,7 @@ async function startServer() {
     }
   });
 
-  // Execute code via Judge0
+  // Execute code via sandboxed runner
   app.post('/api/execute', authMiddleware, async (req, res) => {
     const { language, code, input, functionName } = req.body;
     try {
@@ -949,8 +936,8 @@ Generate a coding challenge as a JSON object matching this structure:
     });
   }
 
-  httpServer.listen(PORT, '0.0.0.0', () => {
-    console.log(`🚀 Server running on http://0.0.0.0:${PORT}`);
+  httpServer.listen(PORT, 'localhost', () => {
+    console.log(`🚀 Server running on http://localhost:${PORT}`);
   });
 }
 

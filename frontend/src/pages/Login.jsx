@@ -68,7 +68,7 @@ export default function Login() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Authentication failed');
-      
+
       login(data);
       toast.success(isSignUp ? 'Registration successful!' : 'Login successful!', { icon: '✅' });
       navigate(data.role === 'recruiter' ? '/recruiter' : '/ide');
@@ -284,11 +284,6 @@ export default function Login() {
             </div>
           </form>
 
-          {/* Bottom Security notice */}
-          <div className="flex items-center justify-center gap-2 mt-6 text-[11px] text-slate-400 font-medium">
-            <Shield className="w-3.5 h-3.5 text-indigo-500" />
-            Do Not Get Flagged
-          </div>
 
         </div>
       </div>

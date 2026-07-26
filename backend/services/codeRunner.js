@@ -1,18 +1,3 @@
-import vm from 'vm';
-
-/**
- * Executes code in a sandboxed environment.
- *
- * JavaScript runs directly in Node.js `vm` module (secure, fast, free, no limits).
- * Python is handled client-side via Pyodide (WebAssembly) — this function returns
- * a sentinel so the frontend knows to use its Pyodide worker instead.
- *
- * @param {string} language
- * @param {string} code
- * @param {string} input  - the argument expression, e.g. "[2,7,11,15], 9"
- * @param {string} functionName
- * @returns {Promise<string>}
- */
 import { Worker } from 'worker_threads';
 import { fileURLToPath } from 'url';
 import path from 'path';
@@ -22,8 +7,16 @@ const __dirname = path.dirname(__filename);
 const workerPath = path.resolve(__dirname, 'jsWorker.js');
 
 /**
- * Executes JavaScript code inside a Node.js `vm` sandbox with a 5-second timeout.
- * The user's code is evaluated, then the named function is called with the input.
+ * Executes code in a sandboxed environment.
+ *
+ * JavaScript runs directly in a isolated Node.js worker thread with vm sandbox.
+ * Python is handled client-side via Pyodide (WebAssembly).
+ *
+ * @param {string} language
+ * @param {string} code
+ * @param {string} input  - the argument expression, e.g. "[2,7,11,15], 9"
+ * @param {string} functionName
+ * @returns {Promise<string>}
  */
 export async function executeCode(language, code, input, functionName = 'solution') {
   if (language === 'javascript') {
@@ -47,7 +40,7 @@ function executeJavaScript(code, input, functionName) {
       if (!resolved) {
         resolved = true;
         await worker.terminate();
-        resolve('Error: Code execution timed out (2s limit exceeded). Check for infinite loops.');
+        resolve('Error: Code execution timed out (2.5s limit exceeded). Check for infinite loops.');
       }
     }, 2500);
 
@@ -82,4 +75,3 @@ function executeJavaScript(code, input, functionName) {
     worker.postMessage({ code, input, functionName });
   });
 }
-
