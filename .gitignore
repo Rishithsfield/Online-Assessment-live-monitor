@@ -1,10 +1,60 @@
+# Dependencies
 node_modules/
-build/
+jspm_packages/
+web_modules/
+
+# Production Build Artifacts
 dist/
-coverage/
-.vscode/
-.DS_Store
-*.log
-.env*
+build/
+out/
+.vite/
+*.tsbuildinfo
+
+# Environment & Secret Configurations
+.env
+.env.local
+.env.*.local
+.env.development
+.env.test
+.env.production
 !.env.example
+
+# Logs & Debugging
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# OS-Specific Files
+.DS_Store
+.DS_Store?
+._*
+[Tt]humbs.db
+[Dd]esktop.ini
+
+# IDE & Editor Directories
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Testing & Coverage
+coverage/
+.nyc_output/
+
+# Native Compiler Outputs & Temporary Executables
+*.exe
+*.out
+*.o
+*.obj
+*.class
+solution_*
+temp_*
+
+# Internal Walkthrough & Documentation
 walkthrough.md

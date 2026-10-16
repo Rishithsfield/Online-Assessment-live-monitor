@@ -1,0 +1,20 @@
+import Invite from '../models/Invite.js';
+
+export async function createInvite(req, res) {
+  try {
+    const code = `INV-${Math.random().toString(36).substring(2, 8).toUpperCase()}`;
+    const invite = await Invite.create({ code });
+    res.status(201).json(invite.toObject());
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to generate invite: ' + err.message });
+  }
+}
+
+export async function getInvites(req, res) {
+  try {
+    const invites = await Invite.find().sort({ createdAt: -1 });
+    res.json(invites.map(i => i.toObject()));
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to fetch invites: ' + err.message });
+  }
+}

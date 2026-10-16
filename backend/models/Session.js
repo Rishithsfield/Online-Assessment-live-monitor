@@ -25,10 +25,28 @@ const sessionSchema = new mongoose.Schema({
     macro: { type: Number, default: 0 },
     copy: { type: Number, default: 0 }
   },
-  scores: { type: Map, of: mongoose.Schema.Types.Mixed, default: {} },
+  scores: { type: mongoose.Schema.Types.Mixed, default: {} },
   codeHistory: [codeHistorySchema],
   startTime: { type: Number, required: true },
   endTime: { type: Number }
 });
+
+sessionSchema.methods.toSafeJSON = function() {
+  const obj = this.toObject();
+  let sc = obj.scores;
+  if (sc instanceof Map) {
+    sc = Object.fromEntries(sc);
+  }
+  if (sc && typeof sc === 'object') {
+    const clean = {};
+    for (const [k, v] of Object.entries(sc)) {
+      if (k !== 'final') clean[k] = v;
+    }
+    obj.scores = clean;
+  } else {
+    obj.scores = {};
+  }
+  return obj;
+};
 
 export default mongoose.model('Session', sessionSchema);

@@ -1,0 +1,207 @@
+import Session from '../models/Session.js';
+import Exam from '../models/Exam.js';
+import { calculateFraudScore } from '../services/fraudScore.js';
+
+export function registerCandidateHandlers(io, socket, activeSockets) {
+  // Candidate joins their personal room
+  socket.on('join_candidate', async ({ sessionId }) => {
+    socket.join(sessionId);
+
+    // Multi-device prevention check
+    const existingSocket = activeSockets.get(sessionId);
+    if (existingSocket && existingSocket.id !== socket.id) {
+      existingSocket.emit('force_logout', { reason: 'Duplicate session detected. Logged in from another device/tab.' });
+      setTimeout(() => {
+        existingSocket.disconnect(true);
+      }, 500);
+
+      const session = await Session.findOne({ id: sessionId });
+      if (session) {
+        session.stats.macro += 1;
+        session.fraudScore = await calculateFraudScore(
+          session.stats.blur,
+          session.stats.paste,
+          session.stats.macro,
+          session.stats.copy || 0
+        );
+        await session.save();
+
+        const sObj = session.toSafeJSON ? session.toSafeJSON() : session.toObject();
+        io.to('recruiter_monitor').emit('session_updated', sObj);
+
+        const alertMsg = 'Multi-device login warning. Previous device disconnected.';
+        io.to('recruiter_monitor').emit('fraud_alert_triggered', {
+          id: `alert_${Date.now()}`,
+          sessionId,
+          candidateName: session.name,
+          eventType: 'macro',
+          fraudScore: session.fraudScore,
+          timestamp: Date.now(),
+          message: alertMsg
+        });
+
+        io.to('recruiter_monitor').emit('candidate_activity', {
+          sessionId,
+          candidateName: session.name,
+          type: 'violation',
+          message: alertMsg,
+          timestamp: Date.now()
+        });
+      }
+    }
+
+    activeSockets.set(sessionId, socket);
+    socket.sessionId = sessionId;
+
+    // Send server-authoritative session synchronization (accurate remaining timer and scores)
+    try {
+      const session = await Session.findOne({ id: sessionId });
+      const exam = await Exam.findOne();
+      const duration = exam?.duration || 3600;
+      let remainingSeconds = duration;
+      if (session && session.startTime) {
+        const elapsed = Math.floor((Date.now() - session.startTime) / 1000);
+        remainingSeconds = Math.max(0, duration - elapsed);
+      }
+
+      let scoresObj = {};
+      if (session?.scores) {
+        scoresObj = session.scores instanceof Map ? Object.fromEntries(session.scores) : session.scores;
+      }
+
+      socket.emit('session_sync', {
+        startTime: session?.startTime,
+        duration,
+        remainingSeconds,
+        scores: scoresObj,
+        status: session?.status,
+        code: session?.code,
+        language: session?.language,
+        codeHistory: session?.codeHistory || []
+      });
+    } catch (err) {
+      console.error('session_sync error:', err);
+    }
+  });
+
+  socket.on('language_update', async ({ sessionId, language }) => {
+    const session = await Session.findOne({ id: sessionId });
+    if (session && session.status === 'active') {
+      session.language = language;
+      await session.save();
+      const sObj = session.toSafeJSON ? session.toSafeJSON() : session.toObject();
+      io.to('recruiter_monitor').emit('session_updated', sObj);
+    }
+  });
+
+  socket.on('code_update', async ({ sessionId, code }) => {
+    const session = await Session.findOne({ id: sessionId });
+    if (session && session.status === 'active') {
+      session.code = code;
+      await session.save();
+      const sObj = session.toSafeJSON ? session.toSafeJSON() : session.toObject();
+      io.to('recruiter_monitor').emit('session_updated', sObj);
+    }
+  });
+
+  socket.on('candidate_run', async ({ sessionId }) => {
+    const session = await Session.findOne({ id: sessionId });
+    if (session) {
+      io.to('recruiter_monitor').emit('candidate_activity', {
+        sessionId,
+        candidateName: session.name,
+        type: 'run',
+        message: 'Ran code against sample testcases',
+        timestamp: Date.now()
+      });
+    }
+  });
+
+  socket.on('submit_code', async ({ sessionId, questionId, code, score }) => {
+    const session = await Session.findOne({ id: sessionId });
+    if (session && session.status === 'active') {
+      const currentScores = session.scores
+        ? (session.scores instanceof Map ? Object.fromEntries(session.scores) : { ...session.scores })
+        : {};
+      delete currentScores['final'];
+      currentScores[String(questionId)] = {
+        passed: Number(score?.passed) || 0,
+        total: Number(score?.total) || 0
+      };
+      session.scores = currentScores;
+      session.markModified('scores');
+
+      if (score && score.passed >= 0) {
+        if (!session.codeHistory) session.codeHistory = [];
+
+        session.codeHistory.push({
+          questionId,
+          code,
+          score,
+          timestamp: Date.now(),
+          id: Date.now().toString()
+        });
+
+        // Keep best submission per question
+        const bestPerQuestion = {};
+        for (const sub of session.codeHistory) {
+          const qId = sub.questionId;
+          if (!bestPerQuestion[qId]) {
+            bestPerQuestion[qId] = sub;
+          } else {
+            const currentBest = bestPerQuestion[qId];
+            const subPassed = sub.score?.passed || 0;
+            const currentPassed = currentBest.score?.passed || 0;
+            if (subPassed > currentPassed) {
+              bestPerQuestion[qId] = sub;
+            } else if (subPassed === currentPassed && sub.code.length < currentBest.code.length) {
+              bestPerQuestion[qId] = sub;
+            }
+          }
+        }
+        session.codeHistory = Object.values(bestPerQuestion);
+      }
+
+      await session.save();
+
+      const sessionObj = session.toSafeJSON ? session.toSafeJSON() : session.toObject();
+
+      io.to('recruiter_monitor').emit('session_updated', sessionObj);
+      io.to('recruiter_monitor').emit('candidate_activity', {
+        sessionId,
+        candidateName: session.name,
+        type: 'submit',
+        message: `Submitted answer for Q${Number(questionId) + 1}. Passed ${score?.passed || 0}/${score?.total || 0} testcases.`,
+        timestamp: Date.now()
+      });
+    }
+  });
+
+  socket.on('submit_test', async ({ sessionId, score }) => {
+    const session = await Session.findOne({ id: sessionId });
+    if (session && session.status === 'active') {
+      session.status = 'submitted';
+      session.endTime = Date.now();
+      const currentScores = session.scores
+        ? (session.scores instanceof Map ? Object.fromEntries(session.scores) : { ...session.scores })
+        : {};
+      delete currentScores['final'];
+      session.scores = currentScores;
+      session.markModified('scores');
+      await session.save();
+
+      const sessionObj = session.toSafeJSON ? session.toSafeJSON() : session.toObject();
+      io.to('recruiter_monitor').emit('session_updated', sessionObj);
+      io.to('recruiter_monitor').emit('candidate_activity', {
+        sessionId,
+        candidateName: session.name,
+        type: 'submit',
+        message: score
+          ? `Submitted the test. Final score: ${score.passed}/${score.total} testcases.`
+          : 'Submitted the test.',
+        timestamp: Date.now()
+      });
+    }
+  });
+}
+

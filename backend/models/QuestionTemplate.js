@@ -15,7 +15,9 @@ const questionTemplateSchema = new mongoose.Schema({
   tags: { type: [String], default: [] },
   boilerplate: {
     javascript: { type: String, default: '' },
-    python: { type: String, default: '' }
+    python: { type: String, default: '' },
+    cpp: { type: String, default: '' },
+    java: { type: String, default: '' }
   },
   testcases: [templateTestCaseSchema],
   createdAt: { type: Date, default: Date.now }
