@@ -6,7 +6,7 @@ A modern, real-time coding assessment and proctoring platform connecting a candi
 
 ## Key Features
 
-### LeetCode-Style Multi-Language Execution Engine
+### Function-Level Multi-Language Execution Engine
 - **Zero Boilerplate Overhead**: Candidates write only the solution class or function — no need to include headers, import libraries, or write `main()`.
 - **First-Class Data Structure Support**:
   - **Binary Trees (`TreeNode`)**: Automatic level-order array parsing and reconstruction (e.g. `[1, 2, 3, null, 4]`).
@@ -18,7 +18,7 @@ A modern, real-time coding assessment and proctoring platform connecting a candi
 
 ### AI-Powered Question Generator (Gemini)
 - **Instant Challenge Generation**: Generates novel coding questions tailored by topic, difficulty (`easy`, `medium`, `hard`), and testcase count.
-- **Strict LeetCode Schemas**: Automatically produces valid signatures and starter boilerplates for C++, Java, Python, and JavaScript.
+- **Standardized Solution Schemas**: Automatically produces valid signatures and starter boilerplates for C++, Java, Python, and JavaScript.
 - **Arithmetic & Testcase Safeguards**: Step-by-step arithmetic verification rules preventing hallucinated outputs.
 
 ### Real-Time Proctoring & Anomaly Telemetry
