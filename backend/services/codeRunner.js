@@ -749,19 +749,21 @@ function executeNative(language, preparedCode, input = '') {
       const srcFile = path.join(tmpDir, `solution_${id}.py`);
       fs.writeFileSync(srcFile, preparedCode, 'utf8');
       try {
-        const pyCmd = process.platform === 'win32' ? 'python' : 'python3';
-        const out = execSync(`${pyCmd} "${srcFile}"`, { timeout: 6000, stdio: 'pipe' });
-        return out.toString().trim();
-      } catch (err) {
-        // If python3 is not found, fallback to python command
-        if (process.platform !== 'win32' && err.message?.includes('python3')) {
+        let out;
+        for (const py of ['python3', 'python']) {
           try {
-            const out = execSync(`python "${srcFile}"`, { timeout: 6000, stdio: 'pipe' });
-            return out.toString().trim();
-          } catch (innerErr) {
-            return (innerErr.stderr?.toString() || innerErr.stdout?.toString() || innerErr.message).trim();
+            out = execSync(`${py} "${srcFile}"`, { timeout: 7000, stdio: 'pipe' });
+            break;
+          } catch (pyErr) {
+            const errStr = pyErr.stderr?.toString() || pyErr.stdout?.toString() || pyErr.message;
+            if (errStr.includes('not found') || pyErr.status === 127 || pyErr.code === 'ENOENT') {
+              continue;
+            }
+            return (pyErr.stderr?.toString() || pyErr.stdout?.toString() || pyErr.message).trim();
           }
         }
+        return out ? out.toString().trim() : 'Python execution failed (python3/python not found)';
+      } catch (err) {
         return (err.stderr?.toString() || err.stdout?.toString() || err.message).trim();
       } finally {
         try { if (fs.existsSync(srcFile)) fs.unlinkSync(srcFile); } catch {}
@@ -810,14 +812,25 @@ function executeNative(language, preparedCode, input = '') {
     }
 
     if (language === 'java') {
+      const javaDir = path.join(tmpDir, `java_${id}`);
+      fs.mkdirSync(javaDir, { recursive: true });
+      const srcFile = path.join(javaDir, 'Main.java');
+      fs.writeFileSync(srcFile, preparedCode, 'utf8');
       try {
-        const encoded = Buffer.from(preparedCode).toString('base64');
-        const cmd = `docker exec judge0-v1131-server-1 sh -c "echo '${encoded}' | base64 -d > /tmp/Main.java && javac /tmp/Main.java && java -cp /tmp Main && rm -f /tmp/Main.*"`;
-        const out = execSync(cmd, { timeout: 10000, stdio: 'pipe' });
-        return out.toString().trim();
-      } catch (dockerErr) {
-        const errOut = dockerErr.stderr?.toString() || dockerErr.stdout?.toString() || dockerErr.message;
-        return `Error:\n${errOut.trim()}`;
+        try {
+          execSync(`javac -encoding UTF-8 "${srcFile}"`, { timeout: 12000, stdio: 'pipe' });
+        } catch (compileErr) {
+          const errOut = compileErr.stderr?.toString() || compileErr.stdout?.toString() || compileErr.message;
+          return `Compilation Error:\n${errOut.trim()}`;
+        }
+
+        const runOut = execSync(`java -cp "${javaDir}" Main`, { timeout: 6000, stdio: 'pipe' });
+        return runOut.toString().trim();
+      } catch (runErr) {
+        const errOut = runErr.stderr?.toString() || runErr.stdout?.toString() || runErr.message;
+        return `Runtime Error:\n${errOut.trim()}`;
+      } finally {
+        try { fs.rmSync(javaDir, { recursive: true, force: true }); } catch {}
       }
     }
 
