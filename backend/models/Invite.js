@@ -8,7 +8,7 @@ const InviteSchema = new mongoose.Schema({
     trim: true
   },
   recruiterId: {
-    type: mongoose.Schema.Types.ObjectId,
+    type: mongoose.Schema.Types.Mixed,
     ref: 'Recruiter',
     index: true
   },

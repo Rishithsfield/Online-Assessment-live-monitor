@@ -97,128 +97,148 @@ export function registerCandidateHandlers(io, socket, activeSockets) {
   });
 
   socket.on('language_update', async ({ sessionId, language }) => {
-    const session = await Session.findOne({ id: sessionId });
-    if (session && session.status === 'active') {
-      session.language = language;
-      await session.save();
-      const sObj = session.toSafeJSON ? session.toSafeJSON() : session.toObject();
-      const recruiterRoom = session.recruiterId ? `recruiter_monitor_${session.recruiterId}` : 'recruiter_monitor';
-      io.to(recruiterRoom).emit('session_updated', sObj);
+    try {
+      const session = await Session.findOne({ id: sessionId });
+      if (session && session.status === 'active') {
+        session.language = language;
+        await session.save();
+        const sObj = session.toSafeJSON ? session.toSafeJSON() : session.toObject();
+        const recruiterRoom = session.recruiterId ? `recruiter_monitor_${session.recruiterId}` : 'recruiter_monitor';
+        io.to(recruiterRoom).emit('session_updated', sObj);
+      }
+    } catch (err) {
+      console.error('language_update error:', err.message);
     }
   });
 
   socket.on('code_update', async ({ sessionId, code }) => {
-    const session = await Session.findOne({ id: sessionId });
-    if (session && session.status === 'active') {
-      session.code = code;
-      await session.save();
-      const sObj = session.toSafeJSON ? session.toSafeJSON() : session.toObject();
-      const recruiterRoom = session.recruiterId ? `recruiter_monitor_${session.recruiterId}` : 'recruiter_monitor';
-      io.to(recruiterRoom).emit('session_updated', sObj);
+    try {
+      const session = await Session.findOne({ id: sessionId });
+      if (session && session.status === 'active') {
+        session.code = code;
+        await session.save();
+        const sObj = session.toSafeJSON ? session.toSafeJSON() : session.toObject();
+        const recruiterRoom = session.recruiterId ? `recruiter_monitor_${session.recruiterId}` : 'recruiter_monitor';
+        io.to(recruiterRoom).emit('session_updated', sObj);
+      }
+    } catch (err) {
+      console.error('code_update error:', err.message);
     }
   });
 
   socket.on('candidate_run', async ({ sessionId }) => {
-    const session = await Session.findOne({ id: sessionId });
-    if (session) {
-      const recruiterRoom = session.recruiterId ? `recruiter_monitor_${session.recruiterId}` : 'recruiter_monitor';
-      io.to(recruiterRoom).emit('candidate_activity', {
-        sessionId,
-        candidateName: session.name,
-        type: 'run',
-        message: 'Ran code against sample testcases',
-        timestamp: Date.now()
-      });
+    try {
+      const session = await Session.findOne({ id: sessionId });
+      if (session) {
+        const recruiterRoom = session.recruiterId ? `recruiter_monitor_${session.recruiterId}` : 'recruiter_monitor';
+        io.to(recruiterRoom).emit('candidate_activity', {
+          sessionId,
+          candidateName: session.name,
+          type: 'run',
+          message: 'Ran code against sample testcases',
+          timestamp: Date.now()
+        });
+      }
+    } catch (err) {
+      console.error('candidate_run error:', err.message);
     }
   });
 
   socket.on('submit_code', async ({ sessionId, questionId, code, score }) => {
-    const session = await Session.findOne({ id: sessionId });
-    if (session && session.status === 'active') {
-      const currentScores = session.scores
-        ? (session.scores instanceof Map ? Object.fromEntries(session.scores) : { ...session.scores })
-        : {};
-      delete currentScores['final'];
-      currentScores[String(questionId)] = {
-        passed: Number(score?.passed) || 0,
-        total: Number(score?.total) || 0
-      };
-      session.scores = currentScores;
-      session.markModified('scores');
+    try {
+      const session = await Session.findOne({ id: sessionId });
+      if (session && session.status === 'active') {
+        const currentScores = session.scores
+          ? (session.scores instanceof Map ? Object.fromEntries(session.scores) : { ...session.scores })
+          : {};
+        delete currentScores['final'];
+        currentScores[String(questionId)] = {
+          passed: Number(score?.passed) || 0,
+          total: Number(score?.total) || 0
+        };
+        session.scores = currentScores;
+        session.markModified('scores');
 
-      if (score && score.passed >= 0) {
-        if (!session.codeHistory) session.codeHistory = [];
+        if (score && score.passed >= 0) {
+          if (!session.codeHistory) session.codeHistory = [];
 
-        session.codeHistory.push({
-          questionId,
-          code,
-          score,
-          timestamp: Date.now(),
-          id: Date.now().toString()
-        });
+          session.codeHistory.push({
+            questionId,
+            code,
+            score,
+            timestamp: Date.now(),
+            id: Date.now().toString()
+          });
 
-        // Keep best submission per question
-        const bestPerQuestion = {};
-        for (const sub of session.codeHistory) {
-          const qId = sub.questionId;
-          if (!bestPerQuestion[qId]) {
-            bestPerQuestion[qId] = sub;
-          } else {
-            const currentBest = bestPerQuestion[qId];
-            const subPassed = sub.score?.passed || 0;
-            const currentPassed = currentBest.score?.passed || 0;
-            if (subPassed > currentPassed) {
+          // Keep best submission per question
+          const bestPerQuestion = {};
+          for (const sub of session.codeHistory) {
+            const qId = sub.questionId;
+            if (!bestPerQuestion[qId]) {
               bestPerQuestion[qId] = sub;
-            } else if (subPassed === currentPassed && sub.code.length < currentBest.code.length) {
-              bestPerQuestion[qId] = sub;
+            } else {
+              const currentBest = bestPerQuestion[qId];
+              const subPassed = sub.score?.passed || 0;
+              const currentPassed = currentBest.score?.passed || 0;
+              if (subPassed > currentPassed) {
+                bestPerQuestion[qId] = sub;
+              } else if (subPassed === currentPassed && sub.code.length < currentBest.code.length) {
+                bestPerQuestion[qId] = sub;
+              }
             }
           }
+          session.codeHistory = Object.values(bestPerQuestion);
         }
-        session.codeHistory = Object.values(bestPerQuestion);
+
+        await session.save();
+
+        const sessionObj = session.toSafeJSON ? session.toSafeJSON() : session.toObject();
+        const recruiterRoom = session.recruiterId ? `recruiter_monitor_${session.recruiterId}` : 'recruiter_monitor';
+
+        io.to(recruiterRoom).emit('session_updated', sessionObj);
+        io.to(recruiterRoom).emit('candidate_activity', {
+          sessionId,
+          candidateName: session.name,
+          type: 'submit',
+          message: `Submitted answer for Q${Number(questionId) + 1}. Passed ${score?.passed || 0}/${score?.total || 0} testcases.`,
+          timestamp: Date.now()
+        });
       }
-
-      await session.save();
-
-      const sessionObj = session.toSafeJSON ? session.toSafeJSON() : session.toObject();
-      const recruiterRoom = session.recruiterId ? `recruiter_monitor_${session.recruiterId}` : 'recruiter_monitor';
-
-      io.to(recruiterRoom).emit('session_updated', sessionObj);
-      io.to(recruiterRoom).emit('candidate_activity', {
-        sessionId,
-        candidateName: session.name,
-        type: 'submit',
-        message: `Submitted answer for Q${Number(questionId) + 1}. Passed ${score?.passed || 0}/${score?.total || 0} testcases.`,
-        timestamp: Date.now()
-      });
+    } catch (err) {
+      console.error('submit_code error:', err.message);
     }
   });
 
   socket.on('submit_test', async ({ sessionId, score }) => {
-    const session = await Session.findOne({ id: sessionId });
-    if (session && session.status === 'active') {
-      session.status = 'submitted';
-      session.endTime = Date.now();
-      const currentScores = session.scores
-        ? (session.scores instanceof Map ? Object.fromEntries(session.scores) : { ...session.scores })
-        : {};
-      delete currentScores['final'];
-      session.scores = currentScores;
-      session.markModified('scores');
-      await session.save();
+    try {
+      const session = await Session.findOne({ id: sessionId });
+      if (session && session.status === 'active') {
+        session.status = 'submitted';
+        session.endTime = Date.now();
+        const currentScores = session.scores
+          ? (session.scores instanceof Map ? Object.fromEntries(session.scores) : { ...session.scores })
+          : {};
+        delete currentScores['final'];
+        session.scores = currentScores;
+        session.markModified('scores');
+        await session.save();
 
-      const sessionObj = session.toSafeJSON ? session.toSafeJSON() : session.toObject();
-      const recruiterRoom = session.recruiterId ? `recruiter_monitor_${session.recruiterId}` : 'recruiter_monitor';
+        const sessionObj = session.toSafeJSON ? session.toSafeJSON() : session.toObject();
+        const recruiterRoom = session.recruiterId ? `recruiter_monitor_${session.recruiterId}` : 'recruiter_monitor';
 
-      io.to(recruiterRoom).emit('session_updated', sessionObj);
-      io.to(recruiterRoom).emit('candidate_activity', {
-        sessionId,
-        candidateName: session.name,
-        type: 'submit',
-        message: score
-          ? `Submitted the test. Final score: ${score.passed}/${score.total} testcases.`
-          : 'Submitted the test.',
-        timestamp: Date.now()
-      });
+        io.to(recruiterRoom).emit('session_updated', sessionObj);
+        io.to(recruiterRoom).emit('candidate_activity', {
+          sessionId,
+          candidateName: session.name,
+          type: 'submit',
+          message: score
+            ? `Submitted the test. Final score: ${score.passed}/${score.total} testcases.`
+            : 'Submitted the test.',
+          timestamp: Date.now()
+        });
+      }
+    } catch (err) {
+      console.error('submit_test error:', err.message);
     }
   });
 }

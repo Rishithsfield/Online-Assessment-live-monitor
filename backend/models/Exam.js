@@ -24,7 +24,7 @@ const questionSchema = new mongoose.Schema({
 }, { _id: false });
 
 const examSchema = new mongoose.Schema({
-  recruiterId: { type: mongoose.Schema.Types.ObjectId, ref: 'Recruiter', index: true },
+  recruiterId: { type: mongoose.Schema.Types.Mixed, ref: 'Recruiter', index: true },
   duration: { type: Number, default: 3600 },
   status: { type: String, enum: ['draft', 'active', 'finished'], default: 'draft' },
   questions: [questionSchema]

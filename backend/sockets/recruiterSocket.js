@@ -7,10 +7,12 @@ import { calculateFraudScore } from '../services/fraudScore.js';
 import { clearTelemetryBuffer } from '../services/telemetryBuffer.js';
 
 export function registerRecruiterHandlers(io, socket, activeSockets) {
-  const recruiterId = socket.user?.userId;
+  const isRecruiter = socket.user?.role === 'recruiter';
+  const recruiterId = isRecruiter ? socket.user?.userId : null;
 
   // Recruiter joins their private monitoring room and gets their current sessions
   socket.on('join_recruiter', async () => {
+    if (!isRecruiter) return;
     if (recruiterId) {
       socket.join(`recruiter_monitor_${recruiterId}`);
     }
@@ -28,23 +30,49 @@ export function registerRecruiterHandlers(io, socket, activeSockets) {
 
   socket.on('get_settings', async (callback) => {
     if (typeof callback === 'function') {
-      const settings = await Settings.findOne();
-      callback(settings);
+      try {
+        const settings = await Settings.findOne();
+        callback(settings);
+      } catch (err) {
+        console.error('get_settings error:', err.message);
+        callback(null);
+      }
     }
   });
 
   socket.on('get_exam', async (callback) => {
-    if (typeof callback === 'function') {
-      const filter = recruiterId ? { recruiterId } : {};
-      let exam = await Exam.findOne(filter);
-      if (!exam && recruiterId) {
-        exam = await Exam.create({ recruiterId, duration: 3600, status: 'draft', questions: [] });
+    if (typeof callback !== 'function') return;
+    try {
+      let targetRecruiterId = recruiterId;
+
+      // If connecting socket is a candidate, look up their assigned recruiter's exam
+      if (!isRecruiter && socket.user?.role === 'candidate') {
+        targetRecruiterId = socket.user?.recruiterId || socket.recruiterId;
+        if (!targetRecruiterId && socket.user?.sessionId) {
+          const session = await Session.findOne({ id: socket.user.sessionId });
+          if (session?.recruiterId) {
+            targetRecruiterId = session.recruiterId;
+          }
+        }
       }
-      callback(exam);
+
+      const filter = targetRecruiterId ? { recruiterId: targetRecruiterId } : {};
+      let exam = await Exam.findOne(filter);
+
+      // Only recruiter can auto-create initial draft exam
+      if (!exam && isRecruiter && targetRecruiterId) {
+        exam = await Exam.create({ recruiterId: targetRecruiterId, duration: 3600, status: 'draft', questions: [] });
+      }
+
+      callback(exam ? (exam.toObject ? exam.toObject() : exam) : null);
+    } catch (err) {
+      console.error('get_exam error:', err.message);
+      callback(null);
     }
   });
 
   socket.on('update_exam', async (newExam) => {
+    if (!isRecruiter) return;
     try {
       if (newExam && newExam.questions) {
         const update = { questions: newExam.questions };
@@ -65,11 +93,15 @@ export function registerRecruiterHandlers(io, socket, activeSockets) {
         }
       }
     } catch (err) {
-      console.error('update_exam error:', err);
+      console.error('update_exam error:', err.message);
     }
   });
 
   socket.on('start_exam', async (callback) => {
+    if (!isRecruiter) {
+      if (typeof callback === 'function') callback({ error: 'Unauthorized' });
+      return;
+    }
     try {
       const filter = recruiterId ? { recruiterId } : {};
       const exam = await Exam.findOneAndUpdate(
@@ -88,12 +120,16 @@ export function registerRecruiterHandlers(io, socket, activeSockets) {
       }
       if (typeof callback === 'function') callback({ success: true, exam: exam.toObject() });
     } catch (err) {
-      console.error('start_exam error:', err);
+      console.error('start_exam error:', err.message);
       if (typeof callback === 'function') callback({ error: err.message });
     }
   });
 
   socket.on('end_exam', async (callback) => {
+    if (!isRecruiter) {
+      if (typeof callback === 'function') callback({ error: 'Unauthorized' });
+      return;
+    }
     try {
       const filter = recruiterId ? { recruiterId } : {};
       const exam = await Exam.findOneAndUpdate(
@@ -124,12 +160,16 @@ export function registerRecruiterHandlers(io, socket, activeSockets) {
 
       if (typeof callback === 'function') callback({ success: true, status: 'finished' });
     } catch (err) {
-      console.error('end_exam error:', err);
+      console.error('end_exam error:', err.message);
       if (typeof callback === 'function') callback({ error: err.message });
     }
   });
 
   socket.on('reset_exam', async (callback) => {
+    if (!isRecruiter) {
+      if (typeof callback === 'function') callback({ error: 'Unauthorized' });
+      return;
+    }
     try {
       const filter = recruiterId ? { recruiterId } : {};
       const exam = await Exam.findOneAndUpdate(
@@ -165,44 +205,54 @@ export function registerRecruiterHandlers(io, socket, activeSockets) {
 
       if (typeof callback === 'function') callback({ success: true, status: 'draft' });
     } catch (err) {
-      console.error('reset_exam error:', err);
+      console.error('reset_exam error:', err.message);
       if (typeof callback === 'function') callback({ error: err.message });
     }
   });
 
   socket.on('update_settings', async (newSettings) => {
-    if (newSettings && newSettings.weights && newSettings.thresholds) {
-      let settings = await Settings.findOne();
-      if (settings) {
-        settings.weights = newSettings.weights;
-        settings.thresholds = newSettings.thresholds;
-        await settings.save();
+    if (!isRecruiter) return;
+    try {
+      if (newSettings && newSettings.weights && newSettings.thresholds) {
+        let settings = await Settings.findOne();
+        if (settings) {
+          settings.weights = newSettings.weights;
+          settings.thresholds = newSettings.thresholds;
+          await settings.save();
 
-        const activeSessions = await Session.find(recruiterId ? { recruiterId, status: 'active' } : { status: 'active' });
-        const monitorRoom = recruiterId ? `recruiter_monitor_${recruiterId}` : 'recruiter_monitor';
-        for (const session of activeSessions) {
-          session.fraudScore = await calculateFraudScore(
-            session.stats.blur,
-            session.stats.paste,
-            session.stats.macro,
-            session.stats.copy || 0
-          );
-          await session.save();
-          io.to(monitorRoom).emit('session_updated', session.toSafeJSON ? session.toSafeJSON() : session.toObject());
+          const activeSessions = await Session.find(recruiterId ? { recruiterId, status: 'active' } : { status: 'active' });
+          const monitorRoom = recruiterId ? `recruiter_monitor_${recruiterId}` : 'recruiter_monitor';
+          for (const session of activeSessions) {
+            session.fraudScore = await calculateFraudScore(
+              session.stats.blur,
+              session.stats.paste,
+              session.stats.macro,
+              session.stats.copy || 0
+            );
+            await session.save();
+            io.to(monitorRoom).emit('session_updated', session.toSafeJSON ? session.toSafeJSON() : session.toObject());
+          }
+          io.to(monitorRoom).emit('settings_updated', settings);
         }
-        io.to(monitorRoom).emit('settings_updated', settings);
       }
+    } catch (err) {
+      console.error('update_settings error:', err.message);
     }
   });
 
   socket.on('force_lockout', async ({ sessionId }) => {
-    const session = await Session.findOne({ id: sessionId });
-    if (session) {
-      session.status = 'disqualified';
-      await session.save();
-      const monitorRoom = session.recruiterId ? `recruiter_monitor_${session.recruiterId}` : 'recruiter_monitor';
-      io.to(sessionId).emit('test_disqualified', { reason: 'Manual recruiter lockout' });
-      io.to(monitorRoom).emit('session_updated', session.toSafeJSON ? session.toSafeJSON() : session.toObject());
+    if (!isRecruiter) return;
+    try {
+      const session = await Session.findOne({ id: sessionId });
+      if (session) {
+        session.status = 'disqualified';
+        await session.save();
+        const monitorRoom = session.recruiterId ? `recruiter_monitor_${session.recruiterId}` : 'recruiter_monitor';
+        io.to(sessionId).emit('test_disqualified', { reason: 'Manual recruiter lockout' });
+        io.to(monitorRoom).emit('session_updated', session.toSafeJSON ? session.toSafeJSON() : session.toObject());
+      }
+    } catch (err) {
+      console.error('force_lockout error:', err.message);
     }
   });
 }

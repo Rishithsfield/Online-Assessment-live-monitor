@@ -7,7 +7,7 @@ const templateTestCaseSchema = new mongoose.Schema({
 }, { _id: false });
 
 const questionTemplateSchema = new mongoose.Schema({
-  recruiterId: { type: mongoose.Schema.Types.ObjectId, ref: 'Recruiter', index: true },
+  recruiterId: { type: mongoose.Schema.Types.Mixed, ref: 'Recruiter', index: true },
   title: { type: String, required: true },
   functionName: { type: String, default: 'solution' },
   text: { type: String, required: true },

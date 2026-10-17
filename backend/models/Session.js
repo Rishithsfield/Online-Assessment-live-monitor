@@ -13,7 +13,7 @@ const codeHistorySchema = new mongoose.Schema({
 
 const sessionSchema = new mongoose.Schema({
   id: { type: String, required: true, unique: true },
-  recruiterId: { type: mongoose.Schema.Types.ObjectId, ref: 'Recruiter', index: true },
+  recruiterId: { type: mongoose.Schema.Types.Mixed, ref: 'Recruiter', index: true },
   candidateId: { type: String, required: true },
   name: { type: String, default: 'Anonymous Candidate' },
   code: { type: String, default: '// Write your code here' },
