@@ -82,7 +82,16 @@ export function QuestionNavigation({
   onSwitchQuestion,
   submittedScores,
 }) {
-  if (!questions || questions.length === 0) return null;
+  if (!questions || questions.length === 0) {
+    return (
+      <div className="px-4 py-3 border-b border-slate-100 bg-slate-50/80 flex items-center justify-between shrink-0">
+        <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Questions (0)</span>
+        <span className="text-[10px] font-semibold text-amber-600 bg-amber-50 px-2.5 py-0.5 rounded-full border border-amber-200">
+          Waiting for Questions
+        </span>
+      </div>
+    );
+  }
 
   return (
     <div className="px-4 py-3 border-b border-slate-100 bg-slate-50 flex items-center justify-between shrink-0">

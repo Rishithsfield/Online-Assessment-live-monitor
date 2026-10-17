@@ -176,7 +176,12 @@ export default function CandidateIDE() {
       }
     });
 
+    const safetyTimer = setTimeout(() => {
+      setLoading(false);
+    }, 3500);
+
     socket.emit('get_exam', (data) => {
+      clearTimeout(safetyTimer);
       setLoading(false);
       if (!data) return;
       setExamData(data);
@@ -222,6 +227,8 @@ export default function CandidateIDE() {
     });
 
     socket.on('exam_updated', (data) => {
+      clearTimeout(safetyTimer);
+      setLoading(false);
       setExamData(data);
       if (data?.questions?.length > 0) {
         const currentQ = data.questions[currentQuestionIndex] || data.questions[0];
@@ -235,6 +242,8 @@ export default function CandidateIDE() {
     });
 
     socket.on('exam_started', (data) => {
+      clearTimeout(safetyTimer);
+      setLoading(false);
       setExamData(data);
       localStorage.setItem(`exam_start_${auth.sessionId}`, String(Date.now()));
       setTimeLeft(data?.duration || 3600);
@@ -285,6 +294,7 @@ export default function CandidateIDE() {
 
     return () => {
       clearInterval(timer);
+      clearTimeout(safetyTimer);
       socket.off('warning_prompt');
       socket.off('test_disqualified');
       socket.off('test_submitted_auto');
@@ -547,7 +557,7 @@ export default function CandidateIDE() {
   if (isDisqualified) return <DisqualifiedScreen onHome={handleLogout} theme={theme} />;
   if (isSubmitted) return <SubmittedScreen onHome={handleLogout} theme={theme} />;
   if (examData && examData.status === 'finished') return <ExamEndedScreen onHome={handleLogout} theme={theme} />;
-  if (examData && examData.status === 'draft') return <WaitingToStartScreen theme={theme} />;
+  if (examData && examData.status === 'draft') return <WaitingToStartScreen theme={theme} onHome={handleLogout} candidateName={auth?.name} />;
 
   const currentQuestion = examData?.questions[currentQuestionIndex];
 

@@ -5,9 +5,14 @@ import { cn } from '../../lib/utils';
 export function QuestionPanel({ question, score }) {
   if (!question) {
     return (
-      <div className="text-center text-slate-400 mt-16 p-6">
-        <Clock className="w-8 h-8 mx-auto mb-3 opacity-40" />
-        <p>Loading exam question...</p>
+      <div className="text-center text-slate-400 mt-16 p-6 space-y-3">
+        <div className="w-12 h-12 bg-slate-100 rounded-full flex items-center justify-center mx-auto text-slate-500 border border-slate-200">
+          <Clock className="w-6 h-6 opacity-60 animate-pulse" />
+        </div>
+        <h3 className="text-sm font-bold text-slate-700">No Questions Added Yet</h3>
+        <p className="text-xs text-slate-450 max-w-xs mx-auto leading-relaxed">
+          The proctor has not configured any questions for this assessment yet. Once added in the recruiter console, they will display here in real-time.
+        </p>
       </div>
     );
   }

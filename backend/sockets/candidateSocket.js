@@ -61,6 +61,19 @@ export function registerCandidateHandlers(io, socket, activeSockets) {
     activeSockets.set(sessionId, socket);
     socket.sessionId = sessionId;
 
+    // Immediately notify recruiter monitoring room that candidate joined/connected
+    if (session) {
+      const sObj = session.toSafeJSON ? session.toSafeJSON() : session.toObject();
+      io.to(recruiterRoom).emit('session_updated', sObj);
+      io.to(recruiterRoom).emit('candidate_activity', {
+        sessionId,
+        candidateName: session.name,
+        type: 'join',
+        message: 'Candidate entered the assessment workspace',
+        timestamp: Date.now()
+      });
+    }
+
     // Send server-authoritative session synchronization (accurate remaining timer and scores)
     try {
       const exam = recruiterId ? await Exam.findOne({ recruiterId }) : await Exam.findOne();

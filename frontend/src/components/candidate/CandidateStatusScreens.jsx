@@ -119,27 +119,46 @@ export function ExamEndedScreen({ onHome, theme }) {
   );
 }
 
-export function WaitingToStartScreen({ theme }) {
+export function WaitingToStartScreen({ theme, onHome, candidateName }) {
   return (
     <div className={cn("min-h-screen flex items-center justify-center p-4 relative overflow-hidden transition-colors",
-      theme === 'dark' ? 'bg-black' : 'bg-[#f8f9fb]'
+      theme === 'dark' ? 'bg-black text-slate-100' : 'bg-[#f8f9fb] text-slate-800'
     )}>
       {floatingBlobs}
-      <div className="max-w-md w-full refractive-glass p-8 rounded-[32px] text-center space-y-6 z-10 animate-fade-up border-indigo-400/20">
-        <div className="w-20 h-20 bg-indigo-500/5 mx-auto rounded-full flex items-center justify-center border border-indigo-500/10">
+      <div className="max-w-md w-full refractive-glass p-8 rounded-[32px] text-center space-y-6 z-10 animate-fade-up border-indigo-400/20 shadow-2xl">
+        <div className="w-20 h-20 bg-indigo-500/10 mx-auto rounded-full flex items-center justify-center border border-indigo-500/20">
           <Clock className="w-10 h-10 text-indigo-500 animate-pulse" />
         </div>
-        <h1 className="text-3xl font-extrabold text-slate-800 dark:text-slate-100 tracking-tight">Waiting to Start</h1>
-        <p className="text-slate-500 dark:text-slate-400 text-sm leading-relaxed">
-          The recruiter has not started the exam yet. Once started, the environment will load automatically.
-        </p>
-        <div className="flex items-center justify-center gap-2.5 text-xs text-slate-450 dark:text-slate-500">
+        <div>
+          <h1 className="text-2xl font-extrabold tracking-tight">Assessment Waiting Room</h1>
+          {candidateName && (
+            <p className="text-xs text-indigo-600 dark:text-indigo-400 font-semibold mt-1">Logged in as {candidateName}</p>
+          )}
+        </div>
+        <div className="p-4 rounded-2xl bg-indigo-50/60 dark:bg-indigo-950/30 border border-indigo-100 dark:border-indigo-900/40 text-left text-xs space-y-2">
+          <div className="flex items-center gap-2 font-bold text-indigo-800 dark:text-indigo-300">
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+            Connected to proctor monitoring session
+          </div>
+          <p className="text-slate-600 dark:text-slate-400 leading-relaxed">
+            The exam status is currently <strong>Draft</strong>. The full coding workspace, problem descriptions, and test run console will automatically unlock the moment your proctor clicks <strong>Start Exam</strong>.
+          </p>
+        </div>
+        <div className="flex items-center justify-center gap-2.5 text-xs text-slate-500 dark:text-slate-400">
           <span className="relative flex h-2.5 w-2.5">
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-indigo-400 opacity-75" />
             <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-indigo-500" />
           </span>
-          Waiting for recruiter...
+          Waiting for proctor to begin...
         </div>
+        {onHome && (
+          <button
+            onClick={onHome}
+            className="w-full py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 text-xs font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-850 transition-colors cursor-pointer"
+          >
+            Leave Waiting Room
+          </button>
+        )}
       </div>
     </div>
   );
