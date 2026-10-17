@@ -774,10 +774,26 @@ function executeNative(language, preparedCode, input = '') {
       const exeFile = path.join(tmpDir, `solution_${id}${exeExt}`);
       fs.writeFileSync(srcFile, preparedCode, 'utf8');
       try {
-        try {
-          execSync(`g++ -O2 -std=c++17 "${srcFile}" -o "${exeFile}"`, { timeout: 10000, stdio: 'pipe' });
-        } catch (compileErr) {
-          const errOut = compileErr.stderr?.toString() || compileErr.stdout?.toString() || compileErr.message;
+        let compiled = false;
+        let lastErr = null;
+
+        for (const compiler of ['g++', 'clang++']) {
+          try {
+            execSync(`${compiler} -O2 -std=c++17 "${srcFile}" -o "${exeFile}"`, { timeout: 10000, stdio: 'pipe' });
+            compiled = true;
+            break;
+          } catch (compileErr) {
+            lastErr = compileErr;
+            const errStr = compileErr.stderr?.toString() || compileErr.stdout?.toString() || compileErr.message;
+            if (errStr.includes('not found') || compileErr.status === 127 || compileErr.code === 'ENOENT') {
+              continue; // Try next compiler
+            }
+            return `Compilation Error:\n${errStr.trim()}`;
+          }
+        }
+
+        if (!compiled) {
+          const errOut = lastErr?.stderr?.toString() || lastErr?.stdout?.toString() || lastErr?.message || 'C++ compiler (g++/clang++) not found';
           return `Compilation Error:\n${errOut.trim()}`;
         }
 

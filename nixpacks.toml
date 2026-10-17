@@ -1,2 +1,2 @@
 [phases.setup]
-nixPkgs = ["nodejs_20", "gcc", "python3"]
+nixPkgs = ["nodejs_20", "gcc", "clang", "python3"]
