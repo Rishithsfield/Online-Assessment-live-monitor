@@ -855,7 +855,8 @@ export async function executeCode(language, code, input = '', functionName = 'so
     return `Language '${language}' is not supported. Supported: javascript, python, cpp, java.`;
   }
 
-  const judge0Url = process.env.JUDGE0_API_URL || 'http://127.0.0.1:2358';
+  const rawJudge0Url = process.env.JUDGE0_API_URL || process.env.JUDGE0_URL || 'http://127.0.0.1:2358';
+  const judge0Url = rawJudge0Url.trim().replace(/\/+$/, '');
 
   let preparedCode = code;
   if (language === 'javascript') {
@@ -868,10 +869,25 @@ export async function executeCode(language, code, input = '', functionName = 'so
     preparedCode = wrapJava(code, input, functionName);
   }
 
+  // Build headers (supporting optional auth tokens or RapidAPI keys)
+  const headers = { 'Content-Type': 'application/json' };
+  const authToken = process.env.JUDGE0_AUTH_TOKEN || process.env.X_AUTH_TOKEN;
+  if (authToken) {
+    headers['X-Auth-Token'] = authToken.trim();
+  }
+  const apiKey = process.env.JUDGE0_API_KEY || process.env.RAPIDAPI_KEY || process.env.X_RAPIDAPI_KEY;
+  if (apiKey) {
+    headers['X-RapidAPI-Key'] = apiKey.trim();
+    try {
+      const parsed = new URL(judge0Url);
+      headers['X-RapidAPI-Host'] = parsed.host;
+    } catch {}
+  }
+
   try {
     const response = await fetch(`${judge0Url}/submissions?base64_encoded=false&wait=true`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers,
       body: JSON.stringify({
         language_id: languageId,
         source_code: preparedCode,
@@ -882,7 +898,25 @@ export async function executeCode(language, code, input = '', functionName = 'so
     });
 
     if (response.ok) {
-      const data = await response.json();
+      let data = await response.json();
+
+      // If submission is queued (status 1) or processing (status 2), poll for completion
+      if ((data.status?.id === 1 || data.status?.id === 2) && data.token) {
+        for (let attempt = 0; attempt < 16; attempt++) {
+          await new Promise(r => setTimeout(r, 500));
+          try {
+            const pollRes = await fetch(`${judge0Url}/submissions/${data.token}?base64_encoded=false`, { headers });
+            if (pollRes.ok) {
+              const updated = await pollRes.json();
+              if (updated.status?.id !== 1 && updated.status?.id !== 2) {
+                data = updated;
+                break;
+              }
+            }
+          } catch {}
+        }
+      }
+
       const statusId = data.status?.id;
 
       // Status 3 = Accepted
@@ -900,7 +934,7 @@ export async function executeCode(language, code, input = '', functionName = 'so
         return `Compilation Error:\n${data.compile_output || data.message || 'Syntax error'}`.trim();
       }
 
-      // Runtime Error (NZEC) or others
+      // Runtime Error (NZEC, SIGSEGV, etc.)
       if (data.stderr) {
         return `Error:\n${data.stderr}`.trim();
       }
@@ -909,15 +943,19 @@ export async function executeCode(language, code, input = '', functionName = 'so
         return `Compilation Error:\n${data.compile_output}`.trim();
       }
 
-      // If Judge0 hit an Internal Error (e.g. status 13 / cgroups), fall through to native runner
-      if (statusId !== 13 && data.message) {
+      // Status 13 = Internal Error (e.g. unprivileged container cgroups issue in Docker)
+      if (statusId === 13) {
+        console.warn(`[Judge0] Server returned status 13 (Internal Error / cgroup sandbox). Falling back to native runner.`);
+      } else if (data.message) {
         return `Error: ${data.message}`.trim();
       }
+    } else {
+      console.warn(`[Judge0] Responded with HTTP ${response.status} (${response.statusText}) from ${judge0Url}. Falling back to native runner.`);
     }
   } catch (err) {
-    console.warn(`Judge0 connection warning: ${err.message}. Falling back to native runner.`);
+    console.warn(`[Judge0] Connection error (${judge0Url}): ${err.message}. Falling back to native runner.`);
   }
 
-  // Fallback to Native Runner
+  // Fallback to Native Runner (Node.js, python3, gcc/clang++, openjdk17)
   return executeNative(language, preparedCode, input);
 }
