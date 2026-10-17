@@ -28,7 +28,8 @@ export function registerChatHandlers(io, socket) {
 
       const msgObj = msg.toObject();
       const session = await Session.findOne({ id: sessionId });
-      const recruiterRoom = session?.recruiterId ? `recruiter_monitor_${session.recruiterId}` : 'recruiter_monitor';
+      const rId = session?.recruiterId ? String(session.recruiterId) : null;
+      const recruiterRoom = rId ? `recruiter_monitor_${rId}` : 'recruiter_monitor';
 
       // Emit to the specific candidate session room
       io.to(sessionId).emit('new_chat_message', msgObj);

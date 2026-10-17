@@ -3,13 +3,15 @@ import Exam from '../models/Exam.js';
 import Settings from '../models/Settings.js';
 import { calculateFraudScore } from '../services/fraudScore.js';
 import { canRecordTelemetry, pushTelemetry } from '../services/telemetryBuffer.js';
+import { buildRecruiterFilter } from '../utils/recruiterQuery.js';
 
 export function registerTelemetryHandlers(io, socket) {
   socket.on('telemetry_event', async (data) => {
     try {
       const { sessionId, eventType, timestamp } = data;
       const session = await Session.findOne({ id: sessionId });
-      const exam = session?.recruiterId ? await Exam.findOne({ recruiterId: session.recruiterId }) : await Exam.findOne();
+      const rId = session?.recruiterId ? String(session.recruiterId) : null;
+      const exam = rId ? (await Exam.findOne(buildRecruiterFilter(rId)) || await Exam.findOne()) : await Exam.findOne();
 
       // Record telemetry violations whenever the candidate session is active
       if (session && session.status === 'active' && (!exam || exam.status !== 'finished')) {
@@ -33,7 +35,7 @@ export function registerTelemetryHandlers(io, socket) {
 
         await session.save();
 
-        const recruiterRoom = session.recruiterId ? `recruiter_monitor_${session.recruiterId}` : 'recruiter_monitor';
+        const recruiterRoom = rId ? `recruiter_monitor_${rId}` : 'recruiter_monitor';
 
         io.to(recruiterRoom).emit('session_updated', session.toSafeJSON ? session.toSafeJSON() : session.toObject());
         io.to(recruiterRoom).emit('candidate_activity', {

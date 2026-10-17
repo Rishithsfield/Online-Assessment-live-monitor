@@ -5,10 +5,11 @@ import Invite from '../models/Invite.js';
 import Telemetry from '../models/Telemetry.js';
 import { calculateFraudScore } from '../services/fraudScore.js';
 import { clearTelemetryBuffer } from '../services/telemetryBuffer.js';
+import { buildRecruiterFilter } from '../utils/recruiterQuery.js';
 
 export function registerRecruiterHandlers(io, socket, activeSockets) {
   const isRecruiter = socket.user?.role === 'recruiter';
-  const recruiterId = isRecruiter ? socket.user?.userId : null;
+  const recruiterId = isRecruiter ? (socket.user?.userId ? String(socket.user.userId) : null) : null;
 
   // Recruiter joins their private monitoring room and gets their current sessions
   socket.on('join_recruiter', async () => {
@@ -19,7 +20,7 @@ export function registerRecruiterHandlers(io, socket, activeSockets) {
     socket.join('recruiter_monitor');
 
     try {
-      const filter = recruiterId ? { recruiterId } : {};
+      const filter = buildRecruiterFilter(recruiterId);
       const sessions = await Session.find(filter);
       const mapped = sessions.map(s => (s.toSafeJSON ? s.toSafeJSON() : s.toObject()));
       socket.emit('initial_state', mapped);
@@ -51,13 +52,19 @@ export function registerRecruiterHandlers(io, socket, activeSockets) {
         if (!targetRecruiterId && socket.user?.sessionId) {
           const session = await Session.findOne({ id: socket.user.sessionId });
           if (session?.recruiterId) {
-            targetRecruiterId = session.recruiterId;
+            targetRecruiterId = String(session.recruiterId);
           }
         }
       }
 
-      const filter = targetRecruiterId ? { recruiterId: targetRecruiterId } : {};
+      const filter = targetRecruiterId ? buildRecruiterFilter(targetRecruiterId) : {};
       let exam = await Exam.findOne(filter);
+
+      // Fallback for candidate if specific recruiter exam hasn't been created yet:
+      // Check for any active exam or first exam so candidate doesn't hang with null
+      if (!exam && !isRecruiter) {
+        exam = await Exam.findOne({ status: 'active' }) || await Exam.findOne();
+      }
 
       // Only recruiter can auto-create initial draft exam
       if (!exam && isRecruiter && targetRecruiterId) {
@@ -77,7 +84,7 @@ export function registerRecruiterHandlers(io, socket, activeSockets) {
       if (newExam && newExam.questions) {
         const update = { questions: newExam.questions };
         if (newExam.duration !== undefined) update.duration = newExam.duration;
-        const filter = recruiterId ? { recruiterId } : {};
+        const filter = buildRecruiterFilter(recruiterId);
         const exam = await Exam.findOneAndUpdate(
           filter,
           { $set: update },
@@ -103,7 +110,7 @@ export function registerRecruiterHandlers(io, socket, activeSockets) {
       return;
     }
     try {
-      const filter = recruiterId ? { recruiterId } : {};
+      const filter = buildRecruiterFilter(recruiterId);
       const exam = await Exam.findOneAndUpdate(
         filter,
         { $set: { status: 'active' } },
@@ -131,7 +138,7 @@ export function registerRecruiterHandlers(io, socket, activeSockets) {
       return;
     }
     try {
-      const filter = recruiterId ? { recruiterId } : {};
+      const filter = buildRecruiterFilter(recruiterId);
       const exam = await Exam.findOneAndUpdate(
         filter,
         { $set: { status: 'finished' } },
@@ -140,7 +147,9 @@ export function registerRecruiterHandlers(io, socket, activeSockets) {
 
       // Automatically submit active candidate sessions for this recruiter
       const now = Date.now();
-      const sessionFilter = recruiterId ? { recruiterId, status: 'active' } : { status: 'active' };
+      const sessionFilter = recruiterId
+        ? { ...buildRecruiterFilter(recruiterId), status: 'active' }
+        : { status: 'active' };
       await Session.updateMany(sessionFilter, { $set: { status: 'submitted', endTime: now } });
 
       if (recruiterId) {
@@ -148,7 +157,7 @@ export function registerRecruiterHandlers(io, socket, activeSockets) {
         io.to(`exam_${recruiterId}`).emit('exam_ended', exam.toObject());
         io.to(`exam_${recruiterId}`).emit('test_submitted_auto');
 
-        const sessions = await Session.find({ recruiterId });
+        const sessions = await Session.find(buildRecruiterFilter(recruiterId));
         io.to(`recruiter_monitor_${recruiterId}`).emit('initial_state', sessions.map(s => s.toObject()));
       } else {
         io.emit('exam_updated', exam.toObject());
@@ -171,7 +180,7 @@ export function registerRecruiterHandlers(io, socket, activeSockets) {
       return;
     }
     try {
-      const filter = recruiterId ? { recruiterId } : {};
+      const filter = buildRecruiterFilter(recruiterId);
       const exam = await Exam.findOneAndUpdate(
         filter,
         { $set: { status: 'draft', questions: [] } },
@@ -179,7 +188,7 @@ export function registerRecruiterHandlers(io, socket, activeSockets) {
       );
 
       // Clean this recruiter's sessions, telemetry, and invites
-      const sessionFilter = recruiterId ? { recruiterId } : {};
+      const sessionFilter = buildRecruiterFilter(recruiterId);
       const sessions = await Session.find(sessionFilter);
       const sessionIds = sessions.map(s => s.id);
 
@@ -220,7 +229,10 @@ export function registerRecruiterHandlers(io, socket, activeSockets) {
           settings.thresholds = newSettings.thresholds;
           await settings.save();
 
-          const activeSessions = await Session.find(recruiterId ? { recruiterId, status: 'active' } : { status: 'active' });
+          const sessionFilter = recruiterId
+            ? { ...buildRecruiterFilter(recruiterId), status: 'active' }
+            : { status: 'active' };
+          const activeSessions = await Session.find(sessionFilter);
           const monitorRoom = recruiterId ? `recruiter_monitor_${recruiterId}` : 'recruiter_monitor';
           for (const session of activeSessions) {
             session.fraudScore = await calculateFraudScore(
@@ -247,7 +259,8 @@ export function registerRecruiterHandlers(io, socket, activeSockets) {
       if (session) {
         session.status = 'disqualified';
         await session.save();
-        const monitorRoom = session.recruiterId ? `recruiter_monitor_${session.recruiterId}` : 'recruiter_monitor';
+        const rId = session.recruiterId ? String(session.recruiterId) : null;
+        const monitorRoom = rId ? `recruiter_monitor_${rId}` : 'recruiter_monitor';
         io.to(sessionId).emit('test_disqualified', { reason: 'Manual recruiter lockout' });
         io.to(monitorRoom).emit('session_updated', session.toSafeJSON ? session.toSafeJSON() : session.toObject());
       }

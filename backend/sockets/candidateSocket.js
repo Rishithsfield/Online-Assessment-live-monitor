@@ -1,6 +1,7 @@
 import Session from '../models/Session.js';
 import Exam from '../models/Exam.js';
 import { calculateFraudScore } from '../services/fraudScore.js';
+import { buildRecruiterFilter } from '../utils/recruiterQuery.js';
 
 export function registerCandidateHandlers(io, socket, activeSockets) {
   // Candidate joins their personal room
@@ -8,13 +9,15 @@ export function registerCandidateHandlers(io, socket, activeSockets) {
     socket.join(sessionId);
 
     const session = await Session.findOne({ id: sessionId });
-    const recruiterId = session?.recruiterId || socket.user?.recruiterId;
-    if (recruiterId) {
-      socket.join(`exam_${recruiterId}`);
-      socket.recruiterId = recruiterId;
+    const rawRecruiterId = session?.recruiterId || socket.user?.recruiterId;
+    const rId = rawRecruiterId ? String(rawRecruiterId) : null;
+
+    if (rId) {
+      socket.join(`exam_${rId}`);
+      socket.recruiterId = rId;
     }
 
-    const recruiterRoom = recruiterId ? `recruiter_monitor_${recruiterId}` : 'recruiter_monitor';
+    const recruiterRoom = rId ? `recruiter_monitor_${rId}` : 'recruiter_monitor';
 
     // Multi-device prevention check
     const existingSocket = activeSockets.get(sessionId);
@@ -76,7 +79,9 @@ export function registerCandidateHandlers(io, socket, activeSockets) {
 
     // Send server-authoritative session synchronization (accurate remaining timer and scores)
     try {
-      const exam = recruiterId ? await Exam.findOne({ recruiterId }) : await Exam.findOne();
+      const exam = rId
+        ? (await Exam.findOne(buildRecruiterFilter(rId)) || await Exam.findOne({ status: 'active' }) || await Exam.findOne())
+        : await Exam.findOne();
       const duration = exam?.duration || 3600;
       let remainingSeconds = duration;
       if (session && session.startTime) {
@@ -116,7 +121,8 @@ export function registerCandidateHandlers(io, socket, activeSockets) {
         session.language = language;
         await session.save();
         const sObj = session.toSafeJSON ? session.toSafeJSON() : session.toObject();
-        const recruiterRoom = session.recruiterId ? `recruiter_monitor_${session.recruiterId}` : 'recruiter_monitor';
+        const rId = session.recruiterId ? String(session.recruiterId) : null;
+        const recruiterRoom = rId ? `recruiter_monitor_${rId}` : 'recruiter_monitor';
         io.to(recruiterRoom).emit('session_updated', sObj);
       }
     } catch (err) {
@@ -131,7 +137,8 @@ export function registerCandidateHandlers(io, socket, activeSockets) {
         session.code = code;
         await session.save();
         const sObj = session.toSafeJSON ? session.toSafeJSON() : session.toObject();
-        const recruiterRoom = session.recruiterId ? `recruiter_monitor_${session.recruiterId}` : 'recruiter_monitor';
+        const rId = session.recruiterId ? String(session.recruiterId) : null;
+        const recruiterRoom = rId ? `recruiter_monitor_${rId}` : 'recruiter_monitor';
         io.to(recruiterRoom).emit('session_updated', sObj);
       }
     } catch (err) {
@@ -143,7 +150,8 @@ export function registerCandidateHandlers(io, socket, activeSockets) {
     try {
       const session = await Session.findOne({ id: sessionId });
       if (session) {
-        const recruiterRoom = session.recruiterId ? `recruiter_monitor_${session.recruiterId}` : 'recruiter_monitor';
+        const rId = session.recruiterId ? String(session.recruiterId) : null;
+        const recruiterRoom = rId ? `recruiter_monitor_${rId}` : 'recruiter_monitor';
         io.to(recruiterRoom).emit('candidate_activity', {
           sessionId,
           candidateName: session.name,
@@ -206,7 +214,8 @@ export function registerCandidateHandlers(io, socket, activeSockets) {
         await session.save();
 
         const sessionObj = session.toSafeJSON ? session.toSafeJSON() : session.toObject();
-        const recruiterRoom = session.recruiterId ? `recruiter_monitor_${session.recruiterId}` : 'recruiter_monitor';
+        const rId = session.recruiterId ? String(session.recruiterId) : null;
+        const recruiterRoom = rId ? `recruiter_monitor_${rId}` : 'recruiter_monitor';
 
         io.to(recruiterRoom).emit('session_updated', sessionObj);
         io.to(recruiterRoom).emit('candidate_activity', {
@@ -237,7 +246,8 @@ export function registerCandidateHandlers(io, socket, activeSockets) {
         await session.save();
 
         const sessionObj = session.toSafeJSON ? session.toSafeJSON() : session.toObject();
-        const recruiterRoom = session.recruiterId ? `recruiter_monitor_${session.recruiterId}` : 'recruiter_monitor';
+        const rId = session.recruiterId ? String(session.recruiterId) : null;
+        const recruiterRoom = rId ? `recruiter_monitor_${rId}` : 'recruiter_monitor';
 
         io.to(recruiterRoom).emit('session_updated', sessionObj);
         io.to(recruiterRoom).emit('candidate_activity', {
@@ -255,4 +265,3 @@ export function registerCandidateHandlers(io, socket, activeSockets) {
     }
   });
 }
-

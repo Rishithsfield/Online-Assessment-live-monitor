@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useSocket } from '../context/SocketContext';
 import { useBehaviorTracker } from '../hooks/useBehaviorTracker';
 import { CodeEditor } from '../components/CodeEditor';
-import { AlertTriangle } from 'lucide-react';
+import { AlertTriangle, Clock } from 'lucide-react';
 import toast from 'react-hot-toast';
 
 import {
@@ -178,13 +178,13 @@ export default function CandidateIDE() {
 
     const safetyTimer = setTimeout(() => {
       setLoading(false);
-    }, 3500);
+    }, 4000);
 
-    socket.emit('get_exam', (data) => {
-      clearTimeout(safetyTimer);
-      setLoading(false);
+    const applyExamData = (data) => {
       if (!data) return;
+      clearTimeout(safetyTimer);
       setExamData(data);
+      setLoading(false);
 
       const savedStart = localStorage.getItem(`exam_start_${auth.sessionId}`);
       if (savedStart) {
@@ -212,7 +212,25 @@ export default function CandidateIDE() {
       } catch {}
 
       isRestoredRef.current = true;
-    });
+    };
+
+    const requestExam = () => {
+      socket.emit('get_exam', (data) => {
+        if (data) {
+          applyExamData(data);
+        } else {
+          // Retry once if exam was still initializing
+          setTimeout(() => {
+            socket.emit('get_exam', (retryData) => {
+              if (retryData) applyExamData(retryData);
+            });
+          }, 1500);
+        }
+      });
+    };
+
+    requestExam();
+    socket.on('connect', requestExam);
 
     socket.on('warning_prompt', ({ message }) => {
       setWarning(message);
@@ -227,36 +245,13 @@ export default function CandidateIDE() {
     });
 
     socket.on('exam_updated', (data) => {
-      clearTimeout(safetyTimer);
-      setLoading(false);
-      setExamData(data);
-      if (data?.questions?.length > 0) {
-        const currentQ = data.questions[currentQuestionIndex] || data.questions[0];
-        setCode(prev => {
-          if (!prev || prev.includes('Write your solution here')) {
-            return getDefaultCode(language, currentQ);
-          }
-          return prev;
-        });
-      }
+      applyExamData(data);
     });
 
     socket.on('exam_started', (data) => {
-      clearTimeout(safetyTimer);
-      setLoading(false);
-      setExamData(data);
       localStorage.setItem(`exam_start_${auth.sessionId}`, String(Date.now()));
-      setTimeLeft(data?.duration || 3600);
+      applyExamData(data);
       toast.success('The exam has started!', { icon: '🚀' });
-      if (data?.questions?.length > 0) {
-        const currentQ = data.questions[currentQuestionIndex] || data.questions[0];
-        setCode(prev => {
-          if (!prev || prev.includes('Write your solution here')) {
-            return getDefaultCode(language, currentQ);
-          }
-          return prev;
-        });
-      }
     });
 
 
@@ -295,6 +290,7 @@ export default function CandidateIDE() {
     return () => {
       clearInterval(timer);
       clearTimeout(safetyTimer);
+      socket.off('connect', requestExam);
       socket.off('warning_prompt');
       socket.off('test_disqualified');
       socket.off('test_submitted_auto');
@@ -559,7 +555,31 @@ export default function CandidateIDE() {
   if (examData && examData.status === 'finished') return <ExamEndedScreen onHome={handleLogout} theme={theme} />;
   if (examData && examData.status === 'draft') return <WaitingToStartScreen theme={theme} onHome={handleLogout} candidateName={auth?.name} />;
 
-  const currentQuestion = examData?.questions[currentQuestionIndex];
+  if (!examData) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-4 bg-[#f8f9fb] dark:bg-black text-slate-800 dark:text-slate-100">
+        <div className="max-w-md w-full refractive-glass p-8 rounded-[32px] text-center space-y-4 shadow-2xl border border-indigo-500/20">
+          <div className="w-16 h-16 bg-indigo-500/10 mx-auto rounded-full flex items-center justify-center border border-indigo-500/20">
+            <Clock className="w-8 h-8 text-indigo-500 animate-spin" />
+          </div>
+          <h2 className="text-xl font-bold">Connecting to Assessment</h2>
+          <p className="text-xs text-slate-500 max-w-xs mx-auto">
+            Retrieving exam environment and questions. Please wait...
+          </p>
+          <button
+            onClick={() => {
+              if (socket) socket.emit('get_exam', (data) => { if (data) setExamData(data); });
+            }}
+            className="px-4 py-2 bg-indigo-600 text-white rounded-xl text-xs font-semibold hover:bg-indigo-700 transition-colors cursor-pointer"
+          >
+            Retry Connection
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  const currentQuestion = examData?.questions?.[currentQuestionIndex];
 
   return (
     <div className="h-screen bg-[#fdfdfd] dark:bg-black flex flex-col font-sans text-slate-800 dark:text-slate-100 overflow-hidden">
