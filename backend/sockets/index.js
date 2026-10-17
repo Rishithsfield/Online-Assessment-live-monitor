@@ -15,7 +15,7 @@ export function initSockets(io) {
     }
 
     try {
-      const decoded = jwt.verify(token, process.env.JWT_SECRET || 'super_secret_jwt_key_123!');
+      const decoded = jwt.verify(token, process.env.JWT_SECRET);
       socket.user = decoded;
       next();
     } catch (err) {

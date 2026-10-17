@@ -25,7 +25,7 @@ export async function registerRecruiter(req, res) {
 
     const token = jwt.sign(
       { userId: recruiter._id, role: 'recruiter', name: recruiter.name },
-      process.env.JWT_SECRET || 'super_secret_jwt_key_123!',
+      process.env.JWT_SECRET,
       { expiresIn: '1d' }
     );
 
@@ -55,7 +55,7 @@ export async function loginRecruiter(req, res) {
 
     const token = jwt.sign(
       { userId: recruiter._id, role: 'recruiter', name: recruiter.name },
-      process.env.JWT_SECRET || 'super_secret_jwt_key_123!',
+      process.env.JWT_SECRET,
       { expiresIn: '1d' }
     );
 
@@ -116,7 +116,7 @@ export async function loginCandidate(req, res) {
 
       const token = jwt.sign(
         { userId: session.candidateId, role: 'candidate', sessionId: session.id, name: session.name },
-        process.env.JWT_SECRET || 'super_secret_jwt_key_123!',
+        process.env.JWT_SECRET,
         { expiresIn: '1d' }
       );
 

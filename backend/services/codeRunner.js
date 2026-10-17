@@ -749,9 +749,19 @@ function executeNative(language, preparedCode, input = '') {
       const srcFile = path.join(tmpDir, `solution_${id}.py`);
       fs.writeFileSync(srcFile, preparedCode, 'utf8');
       try {
-        const out = execSync(`python "${srcFile}"`, { timeout: 6000, stdio: 'pipe' });
+        const pyCmd = process.platform === 'win32' ? 'python' : 'python3';
+        const out = execSync(`${pyCmd} "${srcFile}"`, { timeout: 6000, stdio: 'pipe' });
         return out.toString().trim();
       } catch (err) {
+        // If python3 is not found, fallback to python command
+        if (process.platform !== 'win32' && err.message?.includes('python3')) {
+          try {
+            const out = execSync(`python "${srcFile}"`, { timeout: 6000, stdio: 'pipe' });
+            return out.toString().trim();
+          } catch (innerErr) {
+            return (innerErr.stderr?.toString() || innerErr.stdout?.toString() || innerErr.message).trim();
+          }
+        }
         return (err.stderr?.toString() || err.stdout?.toString() || err.message).trim();
       } finally {
         try { if (fs.existsSync(srcFile)) fs.unlinkSync(srcFile); } catch {}
@@ -760,7 +770,8 @@ function executeNative(language, preparedCode, input = '') {
 
     if (language === 'cpp') {
       const srcFile = path.join(tmpDir, `solution_${id}.cpp`);
-      const exeFile = path.join(tmpDir, `solution_${id}.exe`);
+      const exeExt = process.platform === 'win32' ? '.exe' : '';
+      const exeFile = path.join(tmpDir, `solution_${id}${exeExt}`);
       fs.writeFileSync(srcFile, preparedCode, 'utf8');
       try {
         try {
@@ -770,7 +781,8 @@ function executeNative(language, preparedCode, input = '') {
           return `Compilation Error:\n${errOut.trim()}`;
         }
 
-        const runOut = execSync(`"${exeFile}"`, { timeout: 5000, stdio: 'pipe' });
+        const runCmd = process.platform === 'win32' ? `"${exeFile}"` : `chmod +x "${exeFile}" && "${exeFile}"`;
+        const runOut = execSync(runCmd, { timeout: 5000, stdio: 'pipe' });
         return runOut.toString().trim();
       } catch (runErr) {
         const errOut = runErr.stderr?.toString() || runErr.stdout?.toString() || runErr.message;
