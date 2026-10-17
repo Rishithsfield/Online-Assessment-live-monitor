@@ -54,8 +54,13 @@ export default function Login() {
         payload.email = email.trim();
         payload.password = password.trim();
         if (isSignUp) {
+          if (!name.trim()) {
+            toast.error('Please enter your full name.');
+            setLoading(false);
+            return;
+          }
           endpoint = '/api/auth/recruiter/register';
-          payload.name = name.trim() || 'Recruiter Admin';
+          payload.name = name.trim();
         } else {
           endpoint = '/api/auth/recruiter/login';
         }

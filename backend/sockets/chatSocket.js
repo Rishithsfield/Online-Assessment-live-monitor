@@ -1,4 +1,5 @@
 import Message from '../models/Message.js';
+import Session from '../models/Session.js';
 
 export function registerChatHandlers(io, socket) {
   socket.on('get_chat_history', async ({ sessionId }, callback) => {
@@ -26,10 +27,13 @@ export function registerChatHandlers(io, socket) {
       });
 
       const msgObj = msg.toObject();
+      const session = await Session.findOne({ id: sessionId });
+      const recruiterRoom = session?.recruiterId ? `recruiter_monitor_${session.recruiterId}` : 'recruiter_monitor';
+
       // Emit to the specific candidate session room
       io.to(sessionId).emit('new_chat_message', msgObj);
-      // Emit to recruiter proctor monitors
-      io.to('recruiter_monitor').emit('new_chat_message', msgObj);
+      // Emit to the candidate's assigned recruiter monitor
+      io.to(recruiterRoom).emit('new_chat_message', msgObj);
     } catch (err) {
       console.error('Failed to send chat message:', err);
     }

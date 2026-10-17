@@ -31,8 +31,11 @@ export function registerTelemetryHandlers(io, socket) {
       );
 
       await session.save();
-      io.to('recruiter_monitor').emit('session_updated', session.toSafeJSON ? session.toSafeJSON() : session.toObject());
-      io.to('recruiter_monitor').emit('candidate_activity', {
+
+      const recruiterRoom = session.recruiterId ? `recruiter_monitor_${session.recruiterId}` : 'recruiter_monitor';
+
+      io.to(recruiterRoom).emit('session_updated', session.toSafeJSON ? session.toSafeJSON() : session.toObject());
+      io.to(recruiterRoom).emit('candidate_activity', {
         sessionId,
         candidateName: session.name,
         type: 'violation',
@@ -41,7 +44,7 @@ export function registerTelemetryHandlers(io, socket) {
       });
 
       if (session.fraudScore > oldScore) {
-        io.to('recruiter_monitor').emit('fraud_alert_triggered', {
+        io.to(recruiterRoom).emit('fraud_alert_triggered', {
           sessionId,
           candidateName: session.name,
           eventType,

@@ -2,7 +2,13 @@ import QuestionTemplate from '../models/QuestionTemplate.js';
 
 export async function getTemplates(req, res) {
   try {
-    const filter = {};
+    const filter = {
+      $or: [
+        { recruiterId: req.user.userId },
+        { recruiterId: null },
+        { recruiterId: { $exists: false } }
+      ]
+    };
     if (req.query.difficulty) filter.difficulty = req.query.difficulty;
     if (req.query.tag) filter.tags = { $in: [req.query.tag] };
     const templates = await QuestionTemplate.find(filter).sort({ createdAt: -1 });
@@ -14,7 +20,10 @@ export async function getTemplates(req, res) {
 
 export async function createTemplate(req, res) {
   try {
-    const template = await QuestionTemplate.create(req.body);
+    const template = await QuestionTemplate.create({
+      ...req.body,
+      recruiterId: req.user.userId
+    });
     res.status(201).json(template);
   } catch (err) {
     res.status(500).json({ error: 'Failed to create template: ' + err.message });
@@ -23,7 +32,10 @@ export async function createTemplate(req, res) {
 
 export async function deleteTemplate(req, res) {
   try {
-    await QuestionTemplate.findByIdAndDelete(req.params.id);
+    await QuestionTemplate.findOneAndDelete({
+      _id: req.params.id,
+      recruiterId: req.user.userId
+    });
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: 'Failed to delete template: ' + err.message });

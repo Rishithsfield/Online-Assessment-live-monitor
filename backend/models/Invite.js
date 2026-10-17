@@ -7,6 +7,11 @@ const InviteSchema = new mongoose.Schema({
     unique: true,
     trim: true
   },
+  recruiterId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Recruiter',
+    index: true
+  },
   status: {
     type: String,
     enum: ['unused', 'used'],

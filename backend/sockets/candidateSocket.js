@@ -7,6 +7,15 @@ export function registerCandidateHandlers(io, socket, activeSockets) {
   socket.on('join_candidate', async ({ sessionId }) => {
     socket.join(sessionId);
 
+    const session = await Session.findOne({ id: sessionId });
+    const recruiterId = session?.recruiterId || socket.user?.recruiterId;
+    if (recruiterId) {
+      socket.join(`exam_${recruiterId}`);
+      socket.recruiterId = recruiterId;
+    }
+
+    const recruiterRoom = recruiterId ? `recruiter_monitor_${recruiterId}` : 'recruiter_monitor';
+
     // Multi-device prevention check
     const existingSocket = activeSockets.get(sessionId);
     if (existingSocket && existingSocket.id !== socket.id) {
@@ -15,7 +24,6 @@ export function registerCandidateHandlers(io, socket, activeSockets) {
         existingSocket.disconnect(true);
       }, 500);
 
-      const session = await Session.findOne({ id: sessionId });
       if (session) {
         session.stats.macro += 1;
         session.fraudScore = await calculateFraudScore(
@@ -27,10 +35,10 @@ export function registerCandidateHandlers(io, socket, activeSockets) {
         await session.save();
 
         const sObj = session.toSafeJSON ? session.toSafeJSON() : session.toObject();
-        io.to('recruiter_monitor').emit('session_updated', sObj);
+        io.to(recruiterRoom).emit('session_updated', sObj);
 
         const alertMsg = 'Multi-device login warning. Previous device disconnected.';
-        io.to('recruiter_monitor').emit('fraud_alert_triggered', {
+        io.to(recruiterRoom).emit('fraud_alert_triggered', {
           id: `alert_${Date.now()}`,
           sessionId,
           candidateName: session.name,
@@ -40,7 +48,7 @@ export function registerCandidateHandlers(io, socket, activeSockets) {
           message: alertMsg
         });
 
-        io.to('recruiter_monitor').emit('candidate_activity', {
+        io.to(recruiterRoom).emit('candidate_activity', {
           sessionId,
           candidateName: session.name,
           type: 'violation',
@@ -55,8 +63,7 @@ export function registerCandidateHandlers(io, socket, activeSockets) {
 
     // Send server-authoritative session synchronization (accurate remaining timer and scores)
     try {
-      const session = await Session.findOne({ id: sessionId });
-      const exam = await Exam.findOne();
+      const exam = recruiterId ? await Exam.findOne({ recruiterId }) : await Exam.findOne();
       const duration = exam?.duration || 3600;
       let remainingSeconds = duration;
       if (session && session.startTime) {
@@ -79,6 +86,11 @@ export function registerCandidateHandlers(io, socket, activeSockets) {
         language: session?.language,
         codeHistory: session?.codeHistory || []
       });
+
+      // Also ensure candidate receives current questions for this recruiter's exam
+      if (exam) {
+        socket.emit('exam_updated', exam.toObject());
+      }
     } catch (err) {
       console.error('session_sync error:', err);
     }
@@ -90,7 +102,8 @@ export function registerCandidateHandlers(io, socket, activeSockets) {
       session.language = language;
       await session.save();
       const sObj = session.toSafeJSON ? session.toSafeJSON() : session.toObject();
-      io.to('recruiter_monitor').emit('session_updated', sObj);
+      const recruiterRoom = session.recruiterId ? `recruiter_monitor_${session.recruiterId}` : 'recruiter_monitor';
+      io.to(recruiterRoom).emit('session_updated', sObj);
     }
   });
 
@@ -100,14 +113,16 @@ export function registerCandidateHandlers(io, socket, activeSockets) {
       session.code = code;
       await session.save();
       const sObj = session.toSafeJSON ? session.toSafeJSON() : session.toObject();
-      io.to('recruiter_monitor').emit('session_updated', sObj);
+      const recruiterRoom = session.recruiterId ? `recruiter_monitor_${session.recruiterId}` : 'recruiter_monitor';
+      io.to(recruiterRoom).emit('session_updated', sObj);
     }
   });
 
   socket.on('candidate_run', async ({ sessionId }) => {
     const session = await Session.findOne({ id: sessionId });
     if (session) {
-      io.to('recruiter_monitor').emit('candidate_activity', {
+      const recruiterRoom = session.recruiterId ? `recruiter_monitor_${session.recruiterId}` : 'recruiter_monitor';
+      io.to(recruiterRoom).emit('candidate_activity', {
         sessionId,
         candidateName: session.name,
         type: 'run',
@@ -165,9 +180,10 @@ export function registerCandidateHandlers(io, socket, activeSockets) {
       await session.save();
 
       const sessionObj = session.toSafeJSON ? session.toSafeJSON() : session.toObject();
+      const recruiterRoom = session.recruiterId ? `recruiter_monitor_${session.recruiterId}` : 'recruiter_monitor';
 
-      io.to('recruiter_monitor').emit('session_updated', sessionObj);
-      io.to('recruiter_monitor').emit('candidate_activity', {
+      io.to(recruiterRoom).emit('session_updated', sessionObj);
+      io.to(recruiterRoom).emit('candidate_activity', {
         sessionId,
         candidateName: session.name,
         type: 'submit',
@@ -191,8 +207,10 @@ export function registerCandidateHandlers(io, socket, activeSockets) {
       await session.save();
 
       const sessionObj = session.toSafeJSON ? session.toSafeJSON() : session.toObject();
-      io.to('recruiter_monitor').emit('session_updated', sessionObj);
-      io.to('recruiter_monitor').emit('candidate_activity', {
+      const recruiterRoom = session.recruiterId ? `recruiter_monitor_${session.recruiterId}` : 'recruiter_monitor';
+
+      io.to(recruiterRoom).emit('session_updated', sessionObj);
+      io.to(recruiterRoom).emit('candidate_activity', {
         sessionId,
         candidateName: session.name,
         type: 'submit',
