@@ -822,7 +822,7 @@ try {
 /**
  * Execute natively when Judge0 is unavailable or encounters container sandbox/cgroup issues
  */
-function executeNative(language, preparedCode, input = '') {
+function executeNative(language, preparedCode, input = '', judge0Diag = null) {
   const tmpDir = os.tmpdir();
   const id = Date.now() + '_' + Math.random().toString(36).substring(7);
 
@@ -891,7 +891,11 @@ function executeNative(language, preparedCode, input = '') {
 
         if (!compiled) {
           const errOut = lastErr?.stderr?.toString() || lastErr?.stdout?.toString() || lastErr?.message || 'C++ compiler (g++/clang++) not found';
-          return `Compilation Error:\n${errOut.trim()}`;
+          let msg = `Compilation Error:\n${errOut.trim()}`;
+          if (judge0Diag) {
+            msg += `\n\n[Judge0 Diagnostic: ${judge0Diag}]`;
+          }
+          return msg;
         }
 
         const runCmd = process.platform === 'win32' ? `"${exeFile}"` : `chmod +x "${exeFile}" && "${exeFile}"`;
@@ -982,6 +986,8 @@ export async function executeCode(language, code, input = '', functionName = 'so
     preparedCode = wrapJava(code, input, functionName);
   }
 
+  let judge0Diag = null;
+
   // Build headers (supporting optional auth tokens or RapidAPI keys)
   const headers = { 'Content-Type': 'application/json' };
   const authToken = process.env.JUDGE0_AUTH_TOKEN || process.env.X_AUTH_TOKEN;
@@ -1058,17 +1064,20 @@ export async function executeCode(language, code, input = '', functionName = 'so
 
       // Status 13 = Internal Error (e.g. unprivileged container cgroups issue in Docker)
       if (statusId === 13) {
+        judge0Diag = `Judge0 returned status 13 (Sandbox/cgroups internal error: ${data.message || 'isolate initialization failed'}).`;
         console.warn(`[Judge0] Server returned status 13 (Internal Error / cgroup sandbox). Falling back to native runner.`);
       } else if (data.message) {
         return `Error: ${data.message}`.trim();
       }
     } else {
+      judge0Diag = `Judge0 returned HTTP ${response.status} (${response.statusText}) from ${judge0Url}`;
       console.warn(`[Judge0] Responded with HTTP ${response.status} (${response.statusText}) from ${judge0Url}. Falling back to native runner.`);
     }
   } catch (err) {
+    judge0Diag = `Judge0 connection error (${judge0Url}): ${err.message}`;
     console.warn(`[Judge0] Connection error (${judge0Url}): ${err.message}. Falling back to native runner.`);
   }
 
   // Fallback to Native Runner (Node.js, python3, gcc/clang++, openjdk17)
-  return executeNative(language, preparedCode, input);
+  return executeNative(language, preparedCode, input, judge0Diag);
 }
