@@ -874,7 +874,7 @@ function executeNative(language, preparedCode, input = '') {
         let compiled = false;
         let lastErr = null;
 
-        for (const compiler of ['g++', 'clang++']) {
+        for (const compiler of ['g++', 'clang++', 'c++', '/usr/bin/g++', '/usr/bin/clang++', '/usr/bin/c++']) {
           try {
             execSync(`${compiler} -O2 -std=c++17 "${srcFile}" -o "${exeFile}"`, { timeout: 10000, stdio: 'pipe' });
             compiled = true;
@@ -912,14 +912,32 @@ function executeNative(language, preparedCode, input = '') {
       const srcFile = path.join(javaDir, 'Main.java');
       fs.writeFileSync(srcFile, preparedCode, 'utf8');
       try {
+        let javacCmd = 'javac';
+        for (const jc of ['javac', '/usr/bin/javac']) {
+          try {
+            execSync(`${jc} -version`, { stdio: 'pipe' });
+            javacCmd = jc;
+            break;
+          } catch {}
+        }
+
+        let javaCmd = 'java';
+        for (const j of ['java', '/usr/bin/java']) {
+          try {
+            execSync(`${j} -version`, { stdio: 'pipe' });
+            javaCmd = j;
+            break;
+          } catch {}
+        }
+
         try {
-          execSync(`javac -encoding UTF-8 "${srcFile}"`, { timeout: 12000, stdio: 'pipe' });
+          execSync(`${javacCmd} -encoding UTF-8 "${srcFile}"`, { timeout: 12000, stdio: 'pipe' });
         } catch (compileErr) {
           const errOut = compileErr.stderr?.toString() || compileErr.stdout?.toString() || compileErr.message;
           return `Compilation Error:\n${errOut.trim()}`;
         }
 
-        const runOut = execSync(`java -cp "${javaDir}" Main`, { timeout: 6000, stdio: 'pipe' });
+        const runOut = execSync(`${javaCmd} -cp "${javaDir}" Main`, { timeout: 6000, stdio: 'pipe' });
         return runOut.toString().trim();
       } catch (runErr) {
         const errOut = runErr.stderr?.toString() || runErr.stdout?.toString() || runErr.message;
