@@ -35,10 +35,10 @@ const getDefaultCode = (lang, question) => {
     return `class Solution:\n    def ${fnName}(self, *args):\n        # Write your code here\n        pass\n`;
   }
   if (lang === 'cpp') {
-    return `class Solution {\npublic:\n    // Write your solution here\n    void ${fnName}() {\n        \n    }\n};\n`;
+    return `class Solution {\npublic:\n    // Write your solution here\n    int ${fnName}() {\n        return 0;\n    }\n};\n`;
   }
   if (lang === 'java') {
-    return `class Solution {\n    // Write your solution here\n    public void ${fnName}() {\n        \n    }\n}\n`;
+    return `class Solution {\n    // Write your solution here\n    public int ${fnName}() {\n        return 0;\n    }\n}\n`;
   }
   return `/**\n * @return {any}\n */\nvar ${fnName} = function() {\n    // Write your solution here\n};\n`;
 };
@@ -206,7 +206,15 @@ export default function CandidateIDE() {
           const targetIndex = savedIndex < data.questions.length ? savedIndex : 0;
           const qObj = data.questions[targetIndex];
           const qId = qObj.id;
-          const codeToUse = savedAnswers[qId] || answers[qId] || getDefaultCode(initialLang, qObj);
+          const qAns = savedAnswers[qId] || answers[qId];
+          let codeToUse = '';
+          if (typeof qAns === 'object' && qAns !== null) {
+            codeToUse = qAns[initialLang] || getDefaultCode(initialLang, qObj);
+          } else if (typeof qAns === 'string' && qAns.trim()) {
+            codeToUse = qAns;
+          } else {
+            codeToUse = getDefaultCode(initialLang, qObj);
+          }
           setCode(codeToUse);
         }
       } catch {}
@@ -309,34 +317,46 @@ export default function CandidateIDE() {
 
   const handleLanguageChange = (e) => {
     const newLang = e.target.value;
+    const oldLang = language;
     setLanguage(newLang);
 
-    const currentQ = examData?.questions[currentQuestionIndex];
-    const currentPlaceholderJs = getDefaultCode('javascript', currentQ);
-    const currentPlaceholderPy = getDefaultCode('python', currentQ);
-    const currentPlaceholderCpp = getDefaultCode('cpp', currentQ);
-    const currentPlaceholderJava = getDefaultCode('java', currentQ);
-    const isDefault = code === currentPlaceholderJs ||
-      code === currentPlaceholderPy ||
-      code === currentPlaceholderCpp ||
-      code === currentPlaceholderJava ||
-      !code.trim() ||
-      code.includes('Write your solution here') ||
-      code.includes('Write code here');
+    const currentQ = examData?.questions?.[currentQuestionIndex];
+    if (currentQ) {
+      const qId = currentQ.id;
+      // Preserve current code under old language
+      const currentQAnswers = typeof answers[qId] === 'object' && answers[qId] !== null ? { ...answers[qId] } : { [oldLang]: code };
+      currentQAnswers[oldLang] = code;
 
-    if (isDefault) {
-      const nextDefault = getDefaultCode(newLang, currentQ);
-      setCode(nextDefault);
-      if (currentQ) {
-        setAnswers(prev => ({ ...prev, [currentQ.id]: nextDefault }));
+      // Immediately resolve code for new language: saved code in newLang or newLang boilerplate
+      let nextCode = currentQAnswers[newLang];
+      if (!nextCode || !nextCode.trim()) {
+        nextCode = getDefaultCode(newLang, currentQ);
       }
+      currentQAnswers[newLang] = nextCode;
+
+      const nextAnswers = {
+        ...answers,
+        [qId]: currentQAnswers
+      };
+
+      setCode(nextCode);
+      setAnswers(nextAnswers);
+
+      if (auth?.sessionId) {
+        try {
+          localStorage.setItem(`exam_state_${auth.sessionId}`, JSON.stringify({
+            answers: nextAnswers, language: newLang, currentQuestionIndex
+          }));
+        } catch {}
+      }
+
       if (socket && auth?.sessionId) {
-        socket.emit('code_update', { sessionId: auth.sessionId, code: nextDefault });
+        socket.emit('code_update', { sessionId: auth.sessionId, code: nextCode });
+        socket.emit('language_update', { sessionId: auth.sessionId, language: newLang });
       }
-    }
-
-    if (socket && auth?.sessionId)
+    } else if (socket && auth?.sessionId) {
       socket.emit('language_update', { sessionId: auth.sessionId, language: newLang });
+    }
   };
 
   const handleCodeChange = (newCode) => {
@@ -344,8 +364,11 @@ export default function CandidateIDE() {
     setCode(val);
     const currQ = examData?.questions[currentQuestionIndex];
     if (currQ) {
+      const qId = currQ.id;
       setAnswers(prev => {
-        const next = { ...prev, [currQ.id]: val };
+        const currentQAnswers = typeof prev[qId] === 'object' && prev[qId] !== null ? { ...prev[qId] } : {};
+        currentQAnswers[language] = val;
+        const next = { ...prev, [qId]: currentQAnswers };
         if (auth?.sessionId) {
           try {
             localStorage.setItem(`exam_state_${auth.sessionId}`, JSON.stringify({
@@ -365,12 +388,24 @@ export default function CandidateIDE() {
     const currentQ = examData.questions[currentQuestionIndex];
     const nextAnswers = { ...answers };
     if (currentQ) {
-      nextAnswers[currentQ.id] = code;
+      const qId = currentQ.id;
+      const currentQAnswers = typeof nextAnswers[qId] === 'object' && nextAnswers[qId] !== null ? { ...nextAnswers[qId] } : {};
+      currentQAnswers[language] = code;
+      nextAnswers[qId] = currentQAnswers;
       setAnswers(nextAnswers);
     }
     const targetQ = examData.questions[index];
-    const nextQId = targetQ.id;
-    const restoredCode = nextAnswers[nextQId] || getDefaultCode(language, targetQ);
+    const targetQId = targetQ.id;
+    const targetQAnswers = nextAnswers[targetQId];
+    let restoredCode = '';
+    if (typeof targetQAnswers === 'object' && targetQAnswers !== null) {
+      restoredCode = targetQAnswers[language] || getDefaultCode(language, targetQ);
+    } else if (typeof targetQAnswers === 'string' && targetQAnswers.trim()) {
+      restoredCode = targetQAnswers;
+    } else {
+      restoredCode = getDefaultCode(language, targetQ);
+    }
+
     setCode(restoredCode);
     setCurrentQuestionIndex(index);
     setTerminalOutput(null);
@@ -466,7 +501,10 @@ export default function CandidateIDE() {
     const score = { passed: passedCount, total: tcs.length };
     setSubmittedScores(prev => ({ ...prev, [currentQuestion.id]: score }));
     setAnswers(prev => {
-      const next = { ...prev, [currentQuestion.id]: codeRef.current };
+      const qId = currentQuestion.id;
+      const currentQAnswers = typeof prev[qId] === 'object' && prev[qId] !== null ? { ...prev[qId] } : {};
+      currentQAnswers[languageRef.current] = codeRef.current;
+      const next = { ...prev, [qId]: currentQAnswers };
       if (auth?.sessionId) {
         try {
           localStorage.setItem(`exam_state_${auth.sessionId}`, JSON.stringify({

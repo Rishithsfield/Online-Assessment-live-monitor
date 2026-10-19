@@ -31,42 +31,124 @@ function sanitizeArgs(input) {
     .trim();
 }
 
-/**
- * Convert JSON-style arrays to C++ __vec({...}) to allow binding to non-const vector<T>&
- */
+function splitTopLevelArgs(str) {
+  if (!str || !str.trim()) return [];
+  const args = [];
+  let current = '';
+  let depthBracket = 0;
+  let depthBrace = 0;
+  let inString = false;
+  let escape = false;
+
+  for (let i = 0; i < str.length; i++) {
+    const ch = str[i];
+    if (escape) {
+      current += ch;
+      escape = false;
+      continue;
+    }
+    if (ch === '\\') {
+      current += ch;
+      escape = true;
+      continue;
+    }
+    if (ch === '"') {
+      inString = !inString;
+      current += ch;
+      continue;
+    }
+    if (!inString) {
+      if (ch === '[') depthBracket++;
+      else if (ch === ']') depthBracket--;
+      else if (ch === '{') depthBrace++;
+      else if (ch === '}') depthBrace--;
+      else if (ch === ',' && depthBracket === 0 && depthBrace === 0) {
+        args.push(current.trim());
+        current = '';
+        continue;
+      }
+    }
+    current += ch;
+  }
+  if (current.trim()) {
+    args.push(current.trim());
+  }
+  return args;
+}
+
+function convertSingleCppArg(arg) {
+  arg = arg.trim();
+  // 2D Array: [[...]]
+  if (/^\[\s*\[/.test(arg) && /\]\s*\]$/.test(arg)) {
+    if (/"[^"]"/.test(arg) || /'[^']'/.test(arg)) {
+      if (/\[\s*\[\s*["'][^"']["']\s*\]/.test(arg)) {
+        const inner = arg.slice(1, -1).trim();
+        const converted = inner.replace(/"([^"])"/g, "'$1'").replace(/\[\s*([^\]]+)\s*\]/g, '{$1}');
+        return `__mat_char({${converted}})`;
+      }
+      const inner = arg.slice(1, -1).trim().replace(/\[\s*([^\]]+)\s*\]/g, '{$1}');
+      return `__mat_str({${inner}})`;
+    }
+    const inner = arg.slice(1, -1).trim().replace(/\[\s*([-0-9\s,]+)\s*\]/g, '{$1}');
+    return `__mat({${inner}})`;
+  }
+
+  // 1D Array: [...]
+  if (/^\[.*\]$/.test(arg)) {
+    const inner = arg.slice(1, -1).trim();
+    if (/"/.test(inner)) {
+      return `__vec_str({${inner}})`;
+    }
+    return `__vec({${inner}})`;
+  }
+
+  // Standalone String: "..."
+  if (/^".*"$/.test(arg)) {
+    return `__str(${arg})`;
+  }
+
+  return arg;
+}
+
 function toCppArgs(argsStr) {
   if (!argsStr) return '';
-  let s = argsStr;
-  // 2D int matrix: [[0, 1, 2], [0, 2, 5]] -> __mat({{0, 1, 2}, {0, 2, 5}})
-  s = s.replace(/\[\s*(\[\s*[-0-9\s,]+\s*\](?:\s*,\s*\[\s*[-0-9\s,]+\s*\])*)\s*\]/g, (m, inner) => {
-    return '__mat({' + inner.replace(/\[\s*([-0-9\s,]+)\s*\]/g, '{$1}') + '})';
-  });
-  // 2D char matrix: [["1", "0"], ["0", "1"]] -> __mat_char({{'1', '0'}, {'0', '1'}})
-  s = s.replace(/\[\s*(\[\s*"[^"]*"(?:\s*,\s*"[^"]*")*\s*\](?:\s*,\s*\[\s*"[^"]*"(?:\s*,\s*"[^"]*")*\s*\])*)\s*\]/g, (m, inner) => {
-    const charsConverted = inner.replace(/"([^"])"/g, "'$1'").replace(/\[\s*([^\]]+)\s*\]/g, '{$1}');
-    return '__mat_char({' + charsConverted + '})';
-  });
-  // 1D int array: [1, 2, 3] -> __vec({1, 2, 3})
-  s = s.replace(/\[\s*([-0-9\s,]+)\s*\]/g, '__vec({$1})');
-  // 1D string array: ["a", "b"] -> __vec_str({"a", "b"})
-  s = s.replace(/\[\s*("[^"]*"\s*(?:,\s*"[^"]*"\s*)*)\]/g, '__vec_str({$1})');
-  // Standalone strings "abc" -> __str("abc")
-  s = s.replace(/(?:^|,\s*)("[^"]*")/g, (m, p1) => m.startsWith(',') ? `, __str(${p1})` : `__str(${p1})`);
-  return s;
+  const splitted = splitTopLevelArgs(argsStr);
+  return splitted.map(convertSingleCppArg).join(', ');
+}
+
+function convertSingleJavaArg(arg) {
+  arg = arg.trim();
+  // 2D Array: [[...]]
+  if (/^\[\s*\[/.test(arg) && /\]\s*\]$/.test(arg)) {
+    if (/"[^"]"/.test(arg) || /'[^']'/.test(arg)) {
+      if (/\[\s*\[\s*["'][^"']["']\s*\]/.test(arg)) {
+        const inner = arg.slice(1, -1).trim();
+        const converted = inner.replace(/"([^"])"/g, "'$1'").replace(/\[\s*([^\]]+)\s*\]/g, 'new char[]{$1}');
+        return `new char[][]{${converted}}`;
+      }
+      const inner = arg.slice(1, -1).trim().replace(/\[\s*([^\]]+)\s*\]/g, 'new String[]{$1}');
+      return `new String[][]{${inner}}`;
+    }
+    const inner = arg.slice(1, -1).trim().replace(/\[\s*([-0-9\s,]+)\s*\]/g, 'new int[]{$1}');
+    return `new int[][]{${inner}}`;
+  }
+
+  // 1D Array: [...]
+  if (/^\[.*\]$/.test(arg)) {
+    const inner = arg.slice(1, -1).trim();
+    if (/"/.test(inner)) {
+      return `new String[]{${inner}}`;
+    }
+    return `new int[]{${inner}}`;
+  }
+
+  return arg;
 }
 
 function toJavaArgs(argsStr) {
   if (!argsStr) return '';
-  let s = argsStr;
-  // 2D int array
-  s = s.replace(/\[\s*(\[\s*[-0-9\s,]+\s*\](?:\s*,\s*\[\s*[-0-9\s,]+\s*\])*)\s*\]/g, (m, inner) => {
-    return 'new int[][]{' + inner.replace(/\[\s*([-0-9\s,]+)\s*\]/g, 'new int[]{$1}') + '}';
-  });
-  // 1D int array
-  s = s.replace(/\[\s*([-0-9\s,]+)\s*\]/g, 'new int[]{$1}');
-  // 1D String array
-  s = s.replace(/\[\s*("[^"]*"\s*(?:,\s*"[^"]*"\s*)*)\]/g, 'new String[]{$1}');
-  return s;
+  const splitted = splitTopLevelArgs(argsStr);
+  return splitted.map(convertSingleJavaArg).join(', ');
 }
 
 
@@ -333,16 +415,24 @@ void __print_res(const vector<vector<T>>& mat) {
     cout << "]\\n";
 }
 
+template <typename F>
+void __execute_and_print(F&& f) {
+    if constexpr (is_void_v<invoke_result_t<F>>) {
+        f();
+    } else {
+        auto res = f();
+        __print_res(res);
+    }
+}
+
 ${code.replace(/class\s+Solution\s*\{(?!\s*public:)/, 'class Solution {\npublic:')}
 
 int main() {
     try {
         ${isClassSolution
           ? `Solution __solver;
-        auto __res = __solver.${methodName}(${callArgs});
-        __print_res(__res);`
-          : `auto __res = ${methodName}(${callArgs});
-        __print_res(__res);`
+        __execute_and_print([&]() { return __solver.${methodName}(${callArgs}); });`
+          : `__execute_and_print([&]() { return ${methodName}(${callArgs}); });`
         }
     } catch (const exception& e) {
         cerr << "Runtime error: " << e.what() << endl;
@@ -363,6 +453,7 @@ function wrapJava(code, input, functionName) {
 
   const cleanArgs = sanitizeArgs(input);
   const methodName = extractMethodName(code, functionName);
+  const isVoid = new RegExp(`\\bvoid\\s+${methodName}\\s*\\(`, 'i').test(code);
 
   const isTreeNode = /TreeNode\b/.test(code) || /\b(root|tree)\b/i.test(code) || /\b(root|tree)\b/i.test(functionName);
   const isListNode = /ListNode\b/.test(code) || /\b(head|listNode)\b/i.test(code) || /\b(head|list)\b/i.test(functionName);
@@ -486,7 +577,11 @@ public class Main {
     public static void main(String[] args) {
         try {
             Solution solver = new Solution();
-            printResult(solver.${methodName}(${callArgs}));
+            ${isVoid
+              ? `solver.${methodName}(${callArgs});
+            System.out.println("null");`
+              : `printResult(solver.${methodName}(${callArgs}));`
+            }
         } catch (Exception e) {
             System.err.println("Runtime error: " + e.getMessage());
             e.printStackTrace();
