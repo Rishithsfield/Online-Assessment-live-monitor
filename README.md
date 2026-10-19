@@ -1,17 +1,12 @@
-# 🚀 Online Assessment Live Monitor
-
-[![React 19](https://img.shields.io/badge/React-19.0-61DAFB?style=for-the-badge&logo=react&logoColor=black)](https://react.dev/)
-[![Node.js](https://img.shields.io/badge/Node.js-20.x-339933?style=for-the-badge&logo=node.js&logoColor=white)](https://nodejs.org/)
-[![Express](https://img.shields.io/badge/Express-4.21-000000?style=for-the-badge&logo=express&logoColor=white)](https://expressjs.com/)
-[![Socket.io](https://img.shields.io/badge/Socket.io-4.8-010101?style=for-the-badge&logo=socketdotio&logoColor=white)](https://socket.io/)
-[![MongoDB](https://img.shields.io/badge/MongoDB-Atlas-47A248?style=for-the-badge&logo=mongodb&logoColor=white)](https://www.mongodb.com/)
-[![Docker](https://img.shields.io/badge/Docker-Ready-2496ED?style=for-the-badge&logo=docker&logoColor=white)](https://www.docker.com/)
+# Online Assessment Live Monitor
 
 An enterprise-grade, real-time algorithmic assessment and live proctoring platform. Features an interactive candidate IDE, zero-boilerplate multi-language code execution engine (C++17, Python 3, Java, JavaScript), dynamic fraud telemetry, and an interactive recruiter monitoring dashboard with Gemini AI challenge generation.
 
+**Live Platform**: [https://online-assessment-live-monitor-production.up.railway.app/](https://online-assessment-live-monitor-production.up.railway.app/)
+
 ---
 
-## 🌟 Key Features
+## Key Features
 
 ### 1. Function-Level Multi-Language Execution Engine
 - **Zero-Boilerplate Pure Solutions**: Candidates write only algorithmic solutions inside standard classes or functions (e.g. `class Solution { public: int solution(...) }`). No manual imports, headers, or `main()` boilerplate required.
@@ -58,7 +53,7 @@ An enterprise-grade, real-time algorithmic assessment and live proctoring platfo
 
 ---
 
-## 🛠️ Tech Stack
+## Tech Stack
 
 | Layer | Technologies |
 |---|---|
@@ -71,7 +66,7 @@ An enterprise-grade, real-time algorithmic assessment and live proctoring platfo
 
 ---
 
-## 🏗️ Architecture
+## Architecture
 
 ```text
 [ Candidate Browser (Monaco IDE) ]         [ Recruiter Browser (Console) ]
@@ -97,7 +92,7 @@ An enterprise-grade, real-time algorithmic assessment and live proctoring platfo
 
 ---
 
-## 🚀 Getting Started
+## Getting Started
 
 ### Prerequisites
 - **Node.js**: v18 or higher (v20 recommended)
@@ -158,7 +153,7 @@ npm start
 
 ---
 
-## 🐳 Docker Deployment
+## Docker Deployment
 
 The repository includes a production-ready `Dockerfile` based on `node:20-bookworm-slim` with `build-essential` (`g++`, `gcc`, `make`), `python3`, and `openjdk-17-jdk-headless` pre-installed:
 
@@ -172,10 +167,10 @@ docker run -p 3000:3000 --env-file .env assessment-monitor
 
 ---
 
-## 📖 User Workflows
+## User Workflows
 
 ### Recruiter Workflow
-1. Navigate to [http://localhost:3000](http://localhost:3000) and click **Recruiter**.
+1. Navigate to the platform and click **Recruiter**.
 2. Sign up or log in.
 3. Open the **Exam Setup** panel:
    - Configure duration, title, and add questions manually or click **Generate with AI** to create algorithmic challenges with Gemini.
@@ -185,7 +180,7 @@ docker run -p 3000:3000 --env-file .env assessment-monitor
 6. Monitor candidate keystrokes, fraud risk scores, and submissions live on the dashboard.
 
 ### Candidate Workflow
-1. Navigate to [http://localhost:3000](http://localhost:3000) and select **Candidate**.
+1. Navigate to the platform and select **Candidate**.
 2. Enter your name and valid invite code.
 3. Complete the assessment in the Monaco IDE:
    - Switch between JavaScript, Python, C++, and Java anytime.
@@ -195,7 +190,7 @@ docker run -p 3000:3000 --env-file .env assessment-monitor
 
 ---
 
-## 📁 Repository Structure
+## Repository Structure
 
 ```text
 Online-Assessment-live-monitor/
